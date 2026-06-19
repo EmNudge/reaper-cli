@@ -52,9 +52,7 @@ def register_tools(mcp):
                             "name": p.stem,
                             "filename": p.name,
                             "absolute_path": str(p),
-                            "type": "theme_zip"
-                            if p.suffix == ".ReaperThemeZip"
-                            else "theme",
+                            "type": "theme_zip" if p.suffix == ".ReaperThemeZip" else "theme",
                             "size_bytes": p.stat().st_size,
                         }
                     )
@@ -132,8 +130,7 @@ def register_tools(mcp):
                 return {
                     "success": False,
                     "error": (
-                        f"Theme not found: {theme_name!r}. "
-                        f"Searched: {[str(c) for c in candidates]}"
+                        f"Theme not found: {theme_name!r}. Searched: {[str(c) for c in candidates]}"
                     ),
                 }
             ok = RPR.set_config_var_string("lastthemefn5", str(target))
@@ -154,9 +151,7 @@ def register_tools(mcp):
         try:
             result = RPR.get_config_var_string("lastthemefn5", "", 4096)
             if isinstance(result, tuple):
-                strings = [
-                    s for s in result if isinstance(s, str) and s != "lastthemefn5"
-                ]
+                strings = [s for s in result if isinstance(s, str) and s != "lastthemefn5"]
                 value = strings[0] if strings else ""
             else:
                 value = str(result)
