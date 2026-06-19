@@ -19,7 +19,6 @@ import logging
 import os
 import sqlite3
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger("reaper_mcp.tools.reapack")
 
@@ -73,7 +72,12 @@ def _parse_remotes(ini_path: Path) -> list[dict]:
     if not ini_path.exists():
         return []
     cp = configparser.ConfigParser(interpolation=None, strict=False)
-    cp.optionxform = str  # preserve key case
+    # Preserve key case via the documented ConfigParser idiom — replacing
+    # the optionxform method with str (the no-op transform). Both checkers
+    # complain (ty: method/callable signature mismatch; ruff B010 if we
+    # used setattr instead). Silence ty here; direct assignment keeps ruff
+    # happy because it isn't setattr.
+    cp.optionxform = str  # ty: ignore[invalid-assignment]
     cp.read(ini_path)
     if "remotes" not in cp:
         return []
@@ -179,7 +183,9 @@ def register_tools(mcp):
                 },
                 {
                     "intent": "Find every file a specific package installed",
-                    "steps": ["list_installed_packages → pick one → list_installed_files(package=...)"],
+                    "steps": [
+                        "list_installed_packages → pick one → list_installed_files(package=...)"
+                    ],
                 },
                 {
                     "intent": "Install something new",
@@ -224,10 +230,10 @@ def register_tools(mcp):
 
     @mcp.tool()
     def list_installed_packages(
-        repo: Optional[str] = None,
-        category_filter: Optional[str] = None,
-        name_filter: Optional[str] = None,
-        package_type: Optional[str] = None,
+        repo: str | None = None,
+        category_filter: str | None = None,
+        name_filter: str | None = None,
+        package_type: str | None = None,
     ) -> dict:
         """List packages currently installed via ReaPack.
 
@@ -254,10 +260,7 @@ def register_tools(mcp):
                 if package_type.lower() not in rev:
                     return {
                         "success": False,
-                        "error": (
-                            f"Unknown package_type {package_type!r}. "
-                            f"Valid: {sorted(rev)}"
-                        ),
+                        "error": (f"Unknown package_type {package_type!r}. Valid: {sorted(rev)}"),
                     }
                 type_int = rev[package_type.lower()]
 
@@ -305,8 +308,8 @@ def register_tools(mcp):
 
     @mcp.tool()
     def list_installed_files(
-        package_id: Optional[int] = None,
-        package_name: Optional[str] = None,
+        package_id: int | None = None,
+        package_name: str | None = None,
     ) -> dict:
         """List files installed by a specific package.
 
@@ -322,13 +325,12 @@ def register_tools(mcp):
             db = sqlite3.connect(db_path)
             db.row_factory = sqlite3.Row
 
-            if package_id is None and not package_name:
-                return {
-                    "success": False,
-                    "error": "Provide package_id or package_name",
-                }
-
-            if package_id is None:
+            if package_id is not None:
+                entry_id = int(package_id)
+                row = db.execute("SELECT package FROM entries WHERE id = ?", (entry_id,)).fetchone()
+                resolved_name = row["package"] if row else None
+            elif package_name:
+                # ``elif`` narrows package_name to non-None+truthy for ty.
                 row = db.execute(
                     "SELECT id, package FROM entries WHERE LOWER(package) LIKE ? "
                     "ORDER BY id LIMIT 1",
@@ -343,11 +345,10 @@ def register_tools(mcp):
                 entry_id = row["id"]
                 resolved_name = row["package"]
             else:
-                entry_id = int(package_id)
-                row = db.execute(
-                    "SELECT package FROM entries WHERE id = ?", (entry_id,)
-                ).fetchone()
-                resolved_name = row["package"] if row else None
+                return {
+                    "success": False,
+                    "error": "Provide package_id or package_name",
+                }
 
             files = db.execute(
                 "SELECT path, main, type FROM files WHERE entry = ? ORDER BY path",

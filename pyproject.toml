@@ -86,10 +86,14 @@ indent-style = "space"
 [tool.ty.src]
 include = ["src"]
 
-[tool.ty.rules]
-# reapy and the MCP SDK have loose typing; don't fail on those entry points.
-unresolved-import = "warn"
-unresolved-attribute = "warn"
+[tool.ty.environment]
+# typings/ holds tiny stubs for python-reapy. Its public surface is populated
+# at import time (RPR.<reaperFunc> for ~4000 ReaScript bindings), which ty
+# can't see statically. The stubs declare the modules as having a permissive
+# __getattr__ so RPR.* calls don't trip unresolved-attribute warnings —
+# WITHOUT disabling the rule globally (which would also hide real
+# null-safety bugs in our own code, like the one ty caught in reapack.py).
+extra-paths = ["typings"]
 
 [dependency-groups]
 dev = [

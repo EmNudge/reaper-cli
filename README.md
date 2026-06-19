@@ -223,6 +223,15 @@ pytest
 
 96 tests covering the offline modules (RPP parser, FX cache parsers, audio analyzer), the CLI introspection helpers, the pure utility resolvers (including dB/linear conversion), and structural smoke (imports, no duplicate tool names, `TOOL_MODULES` matches disk layout). Runs in <1 second; no REAPER required.
 
+```bash
+ruff check .   # lint (zero issues)
+ty check       # static type check (zero diagnostics)
+```
+
+`ty` is configured via `[tool.ty.environment]` in `pyproject.toml` to pick up the stub package under `typings/reapy/` — six lines that mark reapy's public API as dynamic without disabling type checking for our own code. Real null-safety issues still surface; the ~170 `RPR.<reaperFunc>` calls (which reapy installs at import time) don't.
+
+Where the two checkers disagree (notably the `cp.optionxform = str` configparser idiom and the `wrapper.__signature__ = …` Typer trick), the code uses `# ty: ignore[<rule>]` inline. ruff and ty don't share a suppression syntax — ruff uses `# noqa:` and reads it; ty uses `# ty: ignore[…]` and ignores ruff's. So pick the syntax of whichever checker is being silenced.
+
 Live tools that drive `python-reapy` are not exercised by the test suite — they need an actual REAPER instance with the distant API enabled. The smoke tests catch registration drift and import failures, which is the most common refactoring bug class.
 
 ## Status

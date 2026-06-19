@@ -109,6 +109,10 @@ def register_tools(mcp):
             finally:
                 if os.path.exists(tmp):
                     os.unlink(tmp)
+            # sf.read returns Any; wrap with asarray + explicit dtype so
+            # numpy's overloads pin to a concrete float ndarray. Without
+            # this, 3.10's stricter stubs can't resolve np.mean(..., axis=1).
+            data = np.asarray(data, dtype=np.float64)
             mono = np.mean(data, axis=1) if data.ndim > 1 else data
             rms = float(np.sqrt(np.mean(mono**2)))
             peak = float(np.max(np.abs(mono)))
@@ -155,6 +159,8 @@ def register_tools(mcp):
                     "success": False,
                     "error": "Project rendered as mono; cannot analyze stereo field",
                 }
+            # Pin to concrete float array (see analyze_dynamics for why).
+            data = np.asarray(data, dtype=np.float64)
             L, R = data[:, 0], data[:, 1]
             mid = (L + R) / 2
             side = (L - R) / 2

@@ -17,15 +17,15 @@ import sys
 import types
 from typing import Any, Optional, Union, get_args, get_origin
 
-
-def _is_union_origin(origin) -> bool:
-    """True for both ``typing.Union[...]`` and PEP 604 ``X | Y`` annotations."""
-    return origin is Union or origin is types.UnionType
-
 import typer
 
 _INLINE_CODE = re.compile(r"`{1,2}([^`]+)`{1,2}")
 _BULLET_OR_INDENT = re.compile(r"^(\s*[-*+]\s|\s{4,}|\s*\d+\.\s)")
+
+
+def _is_union_origin(origin) -> bool:
+    """True for both ``typing.Union[...]`` and PEP 604 ``X | Y`` annotations."""
+    return origin is Union or origin is types.UnionType
 
 
 def _clean_docstring(doc: str | None) -> str | None:
@@ -147,7 +147,10 @@ def _wrap_for_cli(fn):
 
     wrapper.__name__ = fn.__name__
     wrapper.__doc__ = _clean_docstring(fn.__doc__)
-    wrapper.__signature__ = new_sig  # type: ignore[attr-defined]
+    # ``inspect.signature`` honors ``__signature__`` if set on a function; type
+    # checkers don't model this. ty doesn't honor mypy ``type: ignore`` codes,
+    # so we use its own ``ty: ignore`` syntax to silence the warning.
+    wrapper.__signature__ = new_sig  # ty: ignore[unresolved-attribute]
     return wrapper
 
 
