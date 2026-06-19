@@ -1,0 +1,41 @@
+<REAPER_PROJECT 0.1 "7.0" 1234567890
+  TEMPO 120 4 4
+  <TRACK
+    NAME "Lead Vocal"
+    VOLPAN 1.0 0.0 -1 -1 1
+    MUTESOLO 0 0 0
+    <FXCHAIN
+      SHOW 0
+      LASTSEL 0
+      DOCKED 0
+      <VST "VST: ReaEQ (Cockos)" reaeq.vst3 0 "" 12345
+        BYPASS 0 0 0
+        AAAA
+        BBBB
+      >
+      <VST "VST: ReaComp (Cockos)" reacomp.vst3 0 "" 67890
+        BYPASS 1 0 0
+        CCCC
+      >
+    >
+    <ITEM
+      POSITION 0.0
+      LENGTH 5.5
+      <SOURCE WAVE
+        FILE "vocal_take1.wav"
+      >
+    >
+    <ITEM
+      POSITION 5.5
+      LENGTH 3.25
+      <SOURCE WAVE
+        FILE "vocal_take2.wav"
+      >
+    >
+  >
+  <TRACK
+    NAME "Drums"
+    VOLPAN 0.85 -0.2 -1 -1 1
+    MUTESOLO 0 1 0
+  >
+>
