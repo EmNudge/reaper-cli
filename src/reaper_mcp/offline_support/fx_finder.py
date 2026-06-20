@@ -99,13 +99,18 @@ class FXFinder:
 
     @staticmethod
     def _parse_vst_display_name(display_info: str) -> tuple[str, str | None]:
-        if "(" in display_info:
-            parts = display_info.split("(")
-            name = parts[0].strip()
-            if len(parts) > 1:
-                manufacturer = parts[1].split(")")[0].strip()
-                return name, manufacturer
-        return display_info.strip(), None
+        # REAPER's VST display is "Name (Manufacturer)" with the manufacturer
+        # in the *last* parenthesized group — so "Soothe2 (FF Pro) (oeksound)"
+        # → name="Soothe2 (FF Pro)", manufacturer="oeksound", not the other
+        # way around (which is what a left-split would produce).
+        s = display_info.strip()
+        open_paren = s.rfind("(")
+        close_paren = s.rfind(")")
+        if 0 < open_paren < close_paren:
+            name = s[:open_paren].strip()
+            manufacturer = s[open_paren + 1 : close_paren].strip()
+            return name or s, manufacturer or None
+        return s, None
 
     def _parse_au_plugins(self) -> list[dict]:
         plugins: list[dict] = []
@@ -225,7 +230,32 @@ class FXFinder:
         for separator in [" - ", ": ", " : "]:
             if separator in name:
                 return name.split(separator)[0].strip()
+        # Walk the path looking for the first segment that doesn't look like
+        # a generic plugin host directory. macOS uses "Plug-Ins" (hyphenated),
+        # and CLAP needs to be on the skip list too — without these, a path
+        # like ``/Library/Audio/Plug-Ins/CLAP/X.clap`` falls through to the
+        # filesystem-root ``/`` segment.
+        skip = {
+            "/",
+            "VST",
+            "VST3",
+            "VST2",
+            "AU",
+            "CLAP",
+            "Plugins",
+            "Plug-Ins",
+            "Audio",
+            "Components",
+            "Library",
+            "Application Support",
+            "REAPER",
+        }
         for part in Path(path).parts:
-            if part not in ["VST", "VST3", "Plugins", "Audio", "Components"]:
-                return part
+            if part in skip:
+                continue
+            # Skip drive roots like "C:\" on Windows and any single-char
+            # segment that's just punctuation.
+            if len(part) <= 1 or part.endswith(":"):
+                continue
+            return part
         return None

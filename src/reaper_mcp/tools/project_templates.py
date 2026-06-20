@@ -153,7 +153,12 @@ def register_tools(mcp):
         try:
             if clear:
                 ok = RPR.set_config_var_string("deftemplate", "")
-                return {"success": bool(ok), "cleared": True}
+                if not ok:
+                    return {
+                        "success": False,
+                        "error": "set_config_var_string returned False — couldn't clear deftemplate",
+                    }
+                return {"success": True, "cleared": True}
             if not template_name:
                 return {
                     "success": False,
@@ -163,8 +168,15 @@ def register_tools(mcp):
             if not path.exists():
                 return {"success": False, "error": f"Template not found: {path}"}
             ok = RPR.set_config_var_string("deftemplate", str(path))
+            if not ok:
+                return {
+                    "success": False,
+                    "error": "set_config_var_string returned False — couldn't set deftemplate",
+                    "template_name": template_name,
+                    "default_path": str(path),
+                }
             return {
-                "success": bool(ok),
+                "success": True,
                 "template_name": template_name,
                 "default_path": str(path),
                 "note": "Takes effect on next REAPER launch",

@@ -1,7 +1,7 @@
 """MIDI events beyond notes — CC, pitch bend, program change, channel pressure, sysex.
 
-For notes (add/remove/query), see ``midi.py``. This module covers every other
-MIDI event type.
+For notes (add/remove/query), see ``midi_notes.py``. This module covers every
+other MIDI event type.
 
 Position arguments accept either seconds (float) OR ``"M:B,F"`` (string); they
 are converted to PPQ (pulses per quarter note) internally for REAPER's API.
@@ -397,7 +397,12 @@ def register_tools(mcp):
         try:
             _, _, _, take = _get_midi_take(track_index, item)
             ok = RPR.MIDI_DeleteCC(take.id, int(cc_index))
-            return {"success": bool(ok), "deleted_index": int(cc_index)}
+            if not ok:
+                return {
+                    "success": False,
+                    "error": f"MIDI_DeleteCC returned False (cc_index={cc_index} out of range?)",
+                }
+            return {"success": True, "deleted_index": int(cc_index)}
         except Exception as e:
             return {"success": False, "error": str(e)}
 

@@ -73,13 +73,16 @@ class AudioAnalyzer:
         )
 
     def _analyze_levels(self, data: np.ndarray, sr: int) -> LevelAnalysis:
-        mono = np.mean(data, axis=1) if data.shape[1] > 1 else data[:, 0]
-        peak_linear = np.max(np.abs(mono))
+        # Peak / clipping must come from the original samples, not the mono
+        # mean — for out-of-phase stereo (L = +x, R = -x), the mean is silent
+        # while both channels clip.
+        peak_linear = float(np.max(np.abs(data)))
         peak_db = self._linear_to_db(peak_linear) if peak_linear > 0 else -np.inf
-        rms_linear = np.sqrt(np.mean(mono**2))
+        # RMS across all samples & channels (energy domain).
+        rms_linear = float(np.sqrt(np.mean(data**2)))
         rms_db = self._linear_to_db(rms_linear) if rms_linear > 0 else -np.inf
         clipping_threshold = 0.9999
-        clipped = int(np.sum(np.abs(mono) >= clipping_threshold))
+        clipped = int(np.sum(np.abs(data) >= clipping_threshold))
         return LevelAnalysis(
             peak_db=float(peak_db),
             rms_db=float(rms_db),
@@ -103,8 +106,11 @@ class AudioAnalyzer:
             band_mag = magnitude[mask]
             if len(band_mag) == 0:
                 return -np.inf
-            energy = np.mean(band_mag**2)
-            return self._linear_to_db(energy) if energy > 0 else -np.inf
+            # band_mag is FFT magnitude (linear amplitude). band_mag**2 is
+            # power per bin; mean(power) is mean power, which converts to dB
+            # via 10·log10 — NOT 20·log10 (which would assume amplitude).
+            mean_power = float(np.mean(band_mag**2))
+            return 10.0 * float(np.log10(mean_power)) if mean_power > 0 else -np.inf
 
         return FrequencyAnalysis(
             spectral_centroid_hz=float(spectral_centroid),
@@ -118,7 +124,13 @@ class AudioAnalyzer:
         if not is_stereo:
             return StereoAnalysis(False, 0.0, 1.0, True)
         L, R = data[:, 0], data[:, 1]
-        phase_coherence = float(np.corrcoef(L, R)[0, 1]) if len(L) > 0 and len(R) > 0 else 1.0
+        if len(L) == 0 or len(R) == 0 or np.std(L) == 0 or np.std(R) == 0:
+            # corrcoef is undefined (NaN) when either channel has zero variance
+            # (silent / DC-only). Treat that case as "perfectly correlated" so
+            # mono_compatible stays True and we don't emit a bogus phase warning.
+            phase_coherence = 1.0
+        else:
+            phase_coherence = float(np.corrcoef(L, R)[0, 1])
         stereo_width = 1.0 - abs(phase_coherence)
         return StereoAnalysis(
             is_stereo=True,
@@ -128,8 +140,7 @@ class AudioAnalyzer:
         )
 
     def _analyze_dynamics(self, data: np.ndarray, sr: int) -> DynamicsAnalysis:
-        mono = np.mean(data, axis=1) if data.shape[1] > 1 else data[:, 0]
-        if HAS_PYLOUDNORM and len(mono) > 0:
+        if HAS_PYLOUDNORM and len(data) > 0:
             try:
                 meter = pyln.Meter(sr)
                 lufs_integrated = meter.integrated_loudness(data)
@@ -137,9 +148,14 @@ class AudioAnalyzer:
                 lufs_integrated = -23.0
         else:
             lufs_integrated = -23.0
-        peak_linear = np.max(np.abs(mono))
+        # True/sample peak and RMS computed across all channels — see
+        # `_analyze_levels` for the rationale (out-of-phase stereo cancels in
+        # a mono mean and would falsely report "no peak / no clipping").
+        # NOTE: this is sample peak, not ITU-R BS.1770 true peak (which would
+        # need 4× oversampling); the field name is kept for API compatibility.
+        peak_linear = float(np.max(np.abs(data)))
         true_peak_db = self._linear_to_db(peak_linear) if peak_linear > 0 else -np.inf
-        rms_linear = np.sqrt(np.mean(mono**2))
+        rms_linear = float(np.sqrt(np.mean(data**2)))
         crest_db = self._linear_to_db(peak_linear / rms_linear) if rms_linear > 0 else 0.0
         return DynamicsAnalysis(
             lufs_integrated=float(lufs_integrated),

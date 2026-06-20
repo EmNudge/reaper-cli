@@ -144,6 +144,93 @@ def register_tools(mcp):
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
+    def remove_master_fx(fx_index: int) -> dict:
+        """Remove an FX from the master track by index."""
+        from reapy import reascript_api as RPR
+
+        try:
+            master = get_project().master_track
+            ok = RPR.TrackFX_Delete(master.id, int(fx_index))
+            if not ok:
+                return {
+                    "success": False,
+                    "error": f"TrackFX_Delete returned False (fx_index={fx_index} out of range?)",
+                }
+            return {"success": True, "removed_fx_index": int(fx_index)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def get_master_fx_param(fx_index: int, param: int | str) -> dict:
+        """Read a normalized parameter (0.0-1.0) on a master-track FX. ``param`` may be int or name."""
+        try:
+            fx = get_project().master_track.fxs[fx_index]
+            param_index = resolve_fx_param_index(fx, param)
+            if param_index < 0:
+                return {"success": False, "error": f"FX parameter not found: {param!r}"}
+            p = fx.params[param_index]
+            return {
+                "success": True,
+                "fx_index": fx_index,
+                "param_index": param_index,
+                "param_name": p.name,
+                "value": float(p.normalized_value),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def get_master_fx_param_list(fx_index: int) -> dict:
+        """List every parameter on a master-track FX (index, name, current normalized value)."""
+        try:
+            fx = get_project().master_track.fxs[fx_index]
+            params = [
+                {
+                    "index": i,
+                    "name": fx.params[i].name,
+                    "value": float(fx.params[i].normalized_value),
+                }
+                for i in range(fx.n_params)
+            ]
+            return {"success": True, "fx_index": fx_index, "fx_name": fx.name, "params": params}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def toggle_master_fx(fx_index: int, enabled: bool | None = None) -> dict:
+        """Enable / disable / toggle a master-track FX. ``enabled=None`` flips state."""
+        try:
+            fx = get_project().master_track.fxs[fx_index]
+            new_state = (not fx.is_enabled) if enabled is None else bool(enabled)
+            fx.is_enabled = new_state
+            return {
+                "success": True,
+                "fx_index": fx_index,
+                "name": fx.name,
+                "enabled": fx.is_enabled,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def load_master_fx_preset(fx_index: int, preset_name: str) -> dict:
+        """Load a named preset on a master-track FX."""
+        from reapy import reascript_api as RPR
+
+        try:
+            master = get_project().master_track
+            ok = RPR.TrackFX_SetPreset(master.id, int(fx_index), str(preset_name))
+            if not ok:
+                return {
+                    "success": False,
+                    "error": f"Preset not found or could not be loaded: {preset_name!r}",
+                    "fx_index": fx_index,
+                }
+            return {"success": True, "fx_index": fx_index, "preset": preset_name}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
     def apply_mastering_chain(preset: str = "default") -> dict:
         """Add a standard mastering chain to the master track.
 
@@ -194,7 +281,15 @@ def register_tools(mcp):
 
     @mcp.tool()
     def analyze_loudness() -> dict:
-        """Render the project and measure integrated LUFS + true peak (ITU-R BS.1770)."""
+        """Render the project and measure integrated LUFS + sample peak.
+
+        ``integrated_lufs`` is ITU-R BS.1770 loudness via pyloudnorm.
+        ``sample_peak_db`` is the maximum absolute sample value across all
+        channels — NOT ITU-R BS.1770 true peak (which would require 4×
+        oversampling). True peak is typically 0.5-2 dB higher than sample
+        peak; treat this as a lower bound when checking for inter-sample
+        peaks.
+        """
         import numpy as np
         import pyloudnorm as pyln
         import soundfile as sf
@@ -212,7 +307,7 @@ def register_tools(mcp):
                 return {
                     "success": True,
                     "integrated_lufs": round(integrated, 1),
-                    "true_peak_dbtp": round(peak_db, 1),
+                    "sample_peak_db": round(peak_db, 1),
                     "sample_rate": rate,
                 }
             finally:
@@ -242,7 +337,9 @@ def register_tools(mcp):
             finally:
                 if os.path.exists(tmp):
                     os.unlink(tmp)
-            if current == float("-inf"):
+            import math
+
+            if math.isinf(current) or math.isnan(current):
                 return {"success": False, "error": "Project appears to be silent"}
             master = get_project().master_track
             gain_db = target_lufs - current

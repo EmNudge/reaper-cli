@@ -171,11 +171,28 @@ def register_tools(mcp):
             if start >= 0:
                 if replace:
                     new_chunk = chunk[:start] + template_chunk + chunk[end:]
+                    mode = "replace"
                 else:
-                    # Append: insert template's inner VST entries before the closing >.
-                    # Simpler: place a second FXCHAIN block? REAPER will merge.
-                    # Practical compromise: replace and tell the user.
-                    new_chunk = chunk[:start] + template_chunk + chunk[end:]
+                    # Append: splice the template's inner FX entries (everything
+                    # between its opening "<FXCHAIN …" line and its closing ">")
+                    # in just before the existing FXCHAIN block's closing ">".
+                    template_first_nl = template_chunk.find("\n")
+                    template_last_gt = template_chunk.rstrip().rfind(">")
+                    if template_first_nl < 0 or template_last_gt <= template_first_nl:
+                        return {
+                            "success": False,
+                            "error": "Malformed template — could not extract inner FX entries",
+                        }
+                    template_inner = template_chunk[template_first_nl + 1 : template_last_gt]
+                    block_text = chunk[start:end]
+                    existing_last_gt = start + block_text.rstrip("\n").rfind(">")
+                    if existing_last_gt < start:
+                        return {
+                            "success": False,
+                            "error": "Could not locate existing FXCHAIN block's closing '>'",
+                        }
+                    new_chunk = chunk[:existing_last_gt] + template_inner + chunk[existing_last_gt:]
+                    mode = "append"
             else:
                 # No existing FXCHAIN — insert before the closing track > at end.
                 # The track chunk ends with a line containing just `>`; insert before it.
@@ -184,13 +201,21 @@ def register_tools(mcp):
                     new_chunk = lines[0] + "\n" + template_chunk + lines[1] + "\n"
                 else:
                     new_chunk = chunk + "\n" + template_chunk
+                mode = "replace"
 
             ok = RPR.SetTrackStateChunk(track.id, new_chunk, False)
+            if not ok:
+                return {
+                    "success": False,
+                    "error": "SetTrackStateChunk returned False — REAPER rejected the new chunk",
+                    "track_index": track_index,
+                    "template_name": template_name,
+                }
             return {
-                "success": bool(ok),
+                "success": True,
                 "track_index": track_index,
                 "template_name": template_name,
-                "mode": "replace" if (replace or start < 0) else "append",
+                "mode": mode,
                 "source_file": str(path),
             }
         except Exception as e:

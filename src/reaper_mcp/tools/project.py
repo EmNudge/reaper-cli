@@ -137,7 +137,11 @@ def register_tools(mcp):
 
         try:
             project = get_project()
-            RPR.TimeMap_SetTimeSigAtTime(project.id, 0.0, numerator, denominator)
+            # SetTempoTimeSigMarker(proj, ptidx, timepos, measurepos, beatpos,
+            #                       bpm, num, denom, lineartempo).
+            # ptidx=-1 → add a new marker; REAPER merges with any existing marker
+            # at the same position. bpm=0 → keep current tempo.
+            RPR.SetTempoTimeSigMarker(project.id, -1, 0.0, -1, -1, 0, numerator, denominator, False)
             return {
                 "success": True,
                 "time_signature": f"{numerator}/{denominator}",
@@ -184,7 +188,7 @@ def register_tools(mcp):
             else:
                 pos = 0.0
                 measure_pos = "1:1,000"
-            RPR.TimeMap_SetTimeSigAtTime(project.id, pos, numerator, denominator)
+            RPR.SetTempoTimeSigMarker(project.id, -1, pos, -1, -1, 0, numerator, denominator, False)
             return {
                 "success": True,
                 "time_signature": f"{numerator}/{denominator}",

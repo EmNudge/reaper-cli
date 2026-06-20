@@ -218,3 +218,77 @@ def register_tools(mcp):
             }
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def list_receives(track_index: int) -> dict:
+        """List every receive *into* a track (the inverse of ``list_sends``).
+
+        REAPER's send/receive model is symmetric — every send from track A to
+        track B shows up as a send under A AND as a receive under B. This tool
+        lets the LLM walk routing from either direction. Category code 0 is
+        sends from this track, ``-1`` (translated below as REAPER's "receives"
+        category) is receives.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            # REAPER's category for receives is -1.
+            n = int(RPR.GetTrackNumSends(track.id, -1))
+            receives = []
+            for i in range(n):
+                vol = RPR.GetTrackSendInfo_Value(track.id, -1, i, "D_VOL")
+                pan = RPR.GetTrackSendInfo_Value(track.id, -1, i, "D_PAN")
+                muted = bool(RPR.GetTrackSendInfo_Value(track.id, -1, i, "B_MUTE"))
+                # Look up the source track via P_SRCTRACK pointer.
+                src_idx: int | None = None
+                try:
+                    src_ptr = RPR.GetTrackSendInfo_Value(track.id, -1, i, "P_SRCTRACK")
+                    for ti in range(project.n_tracks):
+                        if project.tracks[ti].id == src_ptr:
+                            src_idx = ti
+                            break
+                except Exception:
+                    src_idx = None
+                receives.append(
+                    {
+                        "receive_index": i,
+                        "source_track_index": src_idx,
+                        "volume_linear": float(vol),
+                        "pan": float(pan),
+                        "muted": muted,
+                    }
+                )
+            return {"success": True, "track_index": track_index, "receives": receives}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def get_send_info(source_track_index: int, send_index: int) -> dict:
+        """Read full state of a single send: linear volume, pan, mute, mode, phase, channel mapping."""
+        from reapy import reascript_api as RPR
+
+        _MODE_NAMES = {0: "post_fader", 1: "pre_fx", 3: "post_fx_pre_fader"}
+        try:
+            track = get_project().tracks[source_track_index]
+            vol = float(RPR.GetTrackSendInfo_Value(track.id, 0, send_index, "D_VOL"))
+            pan = float(RPR.GetTrackSendInfo_Value(track.id, 0, send_index, "D_PAN"))
+            muted = bool(RPR.GetTrackSendInfo_Value(track.id, 0, send_index, "B_MUTE"))
+            phase_inverted = bool(RPR.GetTrackSendInfo_Value(track.id, 0, send_index, "B_PHASE"))
+            mode_code = int(RPR.GetTrackSendInfo_Value(track.id, 0, send_index, "I_SENDMODE"))
+            midi_flags = int(RPR.GetTrackSendInfo_Value(track.id, 0, send_index, "I_MIDIFLAGS"))
+            return {
+                "success": True,
+                "source_track_index": source_track_index,
+                "send_index": send_index,
+                "volume_linear": vol,
+                "pan": pan,
+                "muted": muted,
+                "phase_inverted": phase_inverted,
+                "mode": _MODE_NAMES.get(mode_code, f"unknown({mode_code})"),
+                "midi_source_channel": midi_flags & 0x1F,
+                "midi_dest_channel": (midi_flags >> 5) & 0x1F,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}

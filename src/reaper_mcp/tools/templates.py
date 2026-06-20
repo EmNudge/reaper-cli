@@ -106,8 +106,16 @@ def register_tools(mcp):
             target = _templates_dir().joinpath(*parts).with_suffix(".RTrackTemplate")
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(chunk, encoding="utf-8")
+            if not ok:
+                return {
+                    "success": False,
+                    "error": "GetTrackStateChunk reported failure (template may be incomplete)",
+                    "track_index": track_index,
+                    "template_name": template_name,
+                    "saved_to": str(target),
+                }
             return {
-                "success": bool(ok),
+                "success": True,
                 "track_index": track_index,
                 "template_name": template_name,
                 "saved_to": str(target),
@@ -150,8 +158,16 @@ def register_tools(mcp):
                 created = False
 
             ok = RPR.SetTrackStateChunk(track.id, chunk, False)
+            if not ok:
+                return {
+                    "success": False,
+                    "error": "SetTrackStateChunk returned False — REAPER rejected the template chunk",
+                    "template_name": template_name,
+                    "track_index": idx,
+                    "created_new_track": created,
+                }
             return {
-                "success": bool(ok),
+                "success": True,
                 "template_name": template_name,
                 "track_index": idx,
                 "created_new_track": created,

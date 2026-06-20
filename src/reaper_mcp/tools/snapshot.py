@@ -29,6 +29,51 @@ logger = logging.getLogger("reaper_mcp.tools.snapshot")
 
 def register_tools(mcp):
     @mcp.tool()
+    def about_snapshot() -> dict:
+        """Orientation primer for the snapshot tool group — when to use it.
+
+        Covers: the one-round-trip read pattern, the bulk write pattern with
+        single undo grouping, the partial-success return shape, and when to
+        prefer this group over per-tool calls in tracks/items/markers.
+        """
+        return {
+            "success": True,
+            "when_to_use": (
+                "When you need to see / modify many things across the project "
+                "at once. One snapshot call avoids N round-trips to "
+                "list_tracks + list_items + list_markers + …; one bulk setter "
+                "applies many writes inside a single REAPER undo block so the "
+                "user sees ONE Cmd-Z step."
+            ),
+            "read_pattern": (
+                "get_project_snapshot returns project info + every track + "
+                "every FX (optionally with params) + every item + markers + "
+                "regions in one dict. Use include_fx_params=True only when you "
+                "actually need parameter values — it's the slow part."
+            ),
+            "write_pattern": (
+                "set_*_bulk tools (set_track_params_bulk, set_fx_params_bulk, "
+                "set_send_volumes_bulk, …) take a list of (target, value) "
+                "dicts. Each tool wraps the whole batch in begin_undo_block / "
+                "end_undo_block — the user sees one undo step regardless of "
+                "how many items were modified."
+            ),
+            "partial_success_shape": (
+                "Bulk tools return {success: bool, partial: bool, "
+                "applied/added: int, failed: int, ...lists}. success is True "
+                "only if every entry succeeded; partial=True flags some-worked-"
+                "some-failed. Per-item errors are in failed_* lists. There is "
+                "no top-level 'error' field on partial success — read 'partial' "
+                "to detect mixed outcomes."
+            ),
+            "related_groups": {
+                "tracks": "Per-track setters — use these for single-track edits.",
+                "items": "Per-item edits — bulk_set_item_positions is in this group instead.",
+                "system": "begin_undo_block / end_undo_block — manual undo grouping for cross-group sequences.",
+            },
+        }
+
+    @mcp.tool()
     def get_project_snapshot(
         include_fx_params: bool = False,
         include_items: bool = True,

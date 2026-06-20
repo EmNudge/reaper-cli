@@ -1,8 +1,14 @@
 """Line-by-line ``.RPP`` parser → dataclass tree (vendored from dschuler36)."""
 
 import os
+import string
 
 from .dataclasses import FX, AudioItem, Project, Track
+
+# REAPER picks whichever of " ' ` (or unquoted) the value itself doesn't
+# contain. The reader has to support all three quote chars.
+_QUOTE_CHARS = ('"', "'", "`")
+_BASE64_CHARS = frozenset(string.ascii_letters + string.digits + "+/=")
 
 
 class RPPParser:
@@ -60,7 +66,7 @@ class RPPParser:
             elif line.startswith("BYPASS") and current_fx:
                 current_fx["bypassed"] = self._parse_bypass(line)
 
-            elif in_fx_chain and current_fx and line.strip().isalnum():
+            elif in_fx_chain and current_fx and self._looks_like_base64(line):
                 current_fx["encoded_data"].append(line)
 
             elif line == ">" and in_fx_chain:
@@ -93,7 +99,9 @@ class RPPParser:
             elif line.startswith("LENGTH") and in_item_block and current_item:
                 current_item["length"] = self._parse_length(line)
 
-            elif line.startswith("<SOURCE WAVE") and in_item_block:
+            elif line.startswith("<SOURCE ") and in_item_block:
+                # Match every source kind (WAVE, MP3, FLAC, VORBIS, MIDI, …)
+                # so non-WAV audio items still get their file path captured.
                 in_source_block = True
 
             elif line.startswith("FILE") and in_source_block and current_item:
@@ -113,6 +121,14 @@ class RPPParser:
                 if finished_track:
                     self.project.tracks.append(self._create_track_from_dict(finished_track))
                 current_track = track_stack[-1] if track_stack else None
+
+        # Truncated / malformed RPPs may leave <TRACK> blocks unclosed at EOF.
+        # Drain the stack so we at least surface every track we started reading,
+        # rather than silently dropping them.
+        while track_stack:
+            finished_track = track_stack.pop()
+            if finished_track:
+                self.project.tracks.append(self._create_track_from_dict(finished_track))
 
     def _parse_tempo(self, line: str) -> None:
         parts = line.split()
@@ -139,16 +155,51 @@ class RPPParser:
         }
 
     @staticmethod
-    def _parse_name(line: str) -> str:
-        if '"' in line:
-            return line.split('"')[1]
-        return line.split(" ", 1)[1]
+    def _parse_quoted_value(line: str) -> str:
+        """Parse the value off a ``KEY value`` line, handling REAPER's four
+        quote styles (``"…"``, ``'…'``, `` `…` ``, or unquoted).
+
+        REAPER picks whichever quote char doesn't appear in the value, so the
+        reader needs to recognise each. An unterminated quote falls back to
+        the remainder of the line.
+        """
+        parts = line.split(None, 1)
+        if len(parts) < 2:
+            return ""
+        rest = parts[1].lstrip()
+        if not rest:
+            return ""
+        quote = rest[0]
+        if quote in _QUOTE_CHARS:
+            end = rest.find(quote, 1)
+            return rest[1:end] if end > 0 else rest[1:]
+        return rest
+
+    @classmethod
+    def _parse_name(cls, line: str) -> str:
+        return cls._parse_quoted_value(line)
 
     @staticmethod
     def _parse_vst_line(line: str) -> dict:
-        parts = line.split('"')
-        fx_name = parts[1] if len(parts) > 1 else "Unknown"
+        # Layout: ``<VST "name" path/dll IDs…`` — name uses one of the quote
+        # styles. Read from the first non-space char after ``<VST``.
+        rest = line[4:].lstrip() if line.startswith("<VST") else line
+        fx_name = "Unknown"
+        if rest and rest[0] in _QUOTE_CHARS:
+            quote = rest[0]
+            end = rest.find(quote, 1)
+            if end > 0:
+                fx_name = rest[1:end]
         return {"name": fx_name, "encoded_data": [], "bypassed": False}
+
+    @staticmethod
+    def _looks_like_base64(line: str) -> bool:
+        stripped = line.strip()
+        if not stripped:
+            return False
+        # Real base64 lines contain ``+``, ``/``, ``=`` — the previous
+        # ``str.isalnum()`` filter rejected those, dropping most data lines.
+        return all(c in _BASE64_CHARS for c in stripped)
 
     @staticmethod
     def _parse_bypass(line: str) -> bool:
@@ -194,11 +245,7 @@ class RPPParser:
         return 0.0
 
     def _parse_file_path(self, line: str) -> str:
-        if '"' in line:
-            path = line.split('"')[1]
-        else:
-            parts = line.split()
-            path = parts[1] if len(parts) > 1 else ""
+        path = self._parse_quoted_value(line)
         if path and not os.path.isabs(path):
             base_dir = os.path.dirname(self.file_path)
             path = os.path.abspath(os.path.join(base_dir, path))

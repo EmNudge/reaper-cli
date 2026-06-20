@@ -134,8 +134,15 @@ def register_tools(mcp):
                     ),
                 }
             ok = RPR.set_config_var_string("lastthemefn5", str(target))
+            if not ok:
+                return {
+                    "success": False,
+                    "error": "REAPER's set_config_var_string returned False for lastthemefn5",
+                    "theme_name": theme_name,
+                    "theme_path": str(target),
+                }
             return {
-                "success": bool(ok),
+                "success": True,
                 "theme_name": theme_name,
                 "theme_path": str(target),
                 "note": "Takes effect after restarting REAPER",

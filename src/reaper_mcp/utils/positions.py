@@ -8,6 +8,26 @@ half a beat in).
 from __future__ import annotations
 
 
+def _get_time_sig(project, time: float = 0.0) -> tuple[int, int]:
+    """Return ``(numerator, denominator)`` of the time signature at ``time``.
+
+    Used by position math so non-4/4 projects (3/4, 6/8, 12/8, …) convert
+    correctly. Mid-project time-signature *changes* are not modelled — the
+    signature is sampled once at the requested time and assumed to hold for
+    the duration of the conversion; that's correct for the common case where
+    sig is constant.
+    """
+    from reapy import reascript_api as RPR
+
+    result = RPR.TimeMap_GetTimeSigAtTime(project.id, float(time), 0, 0, 0.0)
+    num = int(result[2])
+    denom = int(result[3])
+    if num <= 0 or denom <= 0:
+        # Defensive fallback — REAPER should never report 0/X but guard anyway.
+        return 4, 4
+    return num, denom
+
+
 def position_to_time(position: float | int | str, project=None) -> float:
     """Convert a position (seconds float OR ``M:B,F`` string) to seconds."""
     if isinstance(position, (int, float)):
@@ -32,7 +52,11 @@ def position_to_time(position: float | int | str, project=None) -> float:
             beat = int(parts[1])
             beat_fraction = int(parts[2]) / 1000.0
             full_beat = beat + beat_fraction
-            return RPR.TimeMap2_QNToTime(project.id, (measure - 1) * 4 + full_beat - 1)
+            num, denom = _get_time_sig(project, 0.0)
+            qn_per_beat = 4.0 / denom
+            qn_per_measure = num * qn_per_beat
+            total_qn = (measure - 1) * qn_per_measure + (full_beat - 1) * qn_per_beat
+            return RPR.TimeMap2_QNToTime(project.id, total_qn)
         except ValueError:
             raise
         except Exception as e:
@@ -50,11 +74,22 @@ def time_to_measure(time_seconds: float, project=None) -> str:
         project = reapy.Project()
     try:
         qn = RPR.TimeMap2_timeToQN(project.id, time_seconds)
-        measure = int(qn // 4) + 1
-        full_beat = (qn % 4) + 1
+        num, denom = _get_time_sig(project, time_seconds)
+        qn_per_beat = 4.0 / denom
+        qn_per_measure = num * qn_per_beat
+        measure_idx = int(qn // qn_per_measure)  # 0-based
+        qn_in_measure = qn - measure_idx * qn_per_measure
+        full_beat = qn_in_measure / qn_per_beat + 1  # 1-based
         beat = int(full_beat)
-        beat_fraction = int((full_beat - beat) * 1000)
-        return f"{measure}:{beat},{beat_fraction:03d}"
+        beat_fraction = int(round((full_beat - beat) * 1000))
+        # Carry millisecond round-up into the next beat.
+        if beat_fraction >= 1000:
+            beat += 1
+            beat_fraction -= 1000
+        if beat > num:
+            measure_idx += 1
+            beat -= num
+        return f"{measure_idx + 1}:{beat},{beat_fraction:03d}"
     except Exception as e:
         raise ValueError(f"Failed to convert time {time_seconds} to measure: {e}") from e
 
