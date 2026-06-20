@@ -278,6 +278,291 @@ def register_tools(mcp):
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
+    def set_item_mute(track_index: int, item: int | str, muted: bool) -> dict:
+        """Mute or unmute a media item (per-item, separate from track mute)."""
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            it = get_item_by_id_or_index(track, item)
+            if it is None:
+                return {"success": False, "error": "Item not found"}
+            RPR.SetMediaItemInfo_Value(it.id, "B_MUTE", 1.0 if muted else 0.0)
+            return {
+                "success": True,
+                "track_index": track_index,
+                "item": str(item),
+                "muted": bool(muted),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_item_volume(track_index: int, item: int | str, volume: float) -> dict:
+        """Set an item's gain (linear scale; 1.0 = unity, 2.0 = +6 dB, 0.5 = -6 dB).
+
+        Distinct from take volume — this is the item-level gain knob applied
+        AFTER the take(s) play back.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            it = get_item_by_id_or_index(track, item)
+            if it is None:
+                return {"success": False, "error": "Item not found"}
+            RPR.SetMediaItemInfo_Value(it.id, "D_VOL", float(volume))
+            return {
+                "success": True,
+                "track_index": track_index,
+                "item": str(item),
+                "volume": float(volume),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def split_item(
+        track_index: int,
+        item: int | str,
+        position_time: float | None = None,
+        position_measure: str | None = None,
+    ) -> dict:
+        """Split an item at a position. The right half becomes a new item.
+
+        Returns the new (right-side) item's ``direct_item_id`` and its index on
+        the track. Position must lie strictly inside the item's bounds.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            it = get_item_by_id_or_index(track, item)
+            if it is None:
+                return {"success": False, "error": "Item not found"}
+            pos, pos_ms = resolve_start(position_time, position_measure, project)
+            item_start = it.position
+            item_end = item_start + it.length
+            if pos <= item_start or pos >= item_end:
+                return {
+                    "success": False,
+                    "error": (
+                        f"Split position {pos} is outside item bounds [{item_start}, {item_end})"
+                    ),
+                }
+            new_item_ptr = RPR.SplitMediaItem(it.id, pos)
+            if not new_item_ptr:
+                return {"success": False, "error": "SplitMediaItem returned NULL"}
+            new_index = -1
+            for i, ti in enumerate(track.items):
+                if str(ti.id) == str(new_item_ptr):
+                    new_index = i
+                    break
+            return {
+                "success": True,
+                "track_index": track_index,
+                "original_item": str(item),
+                "new_item_index": new_index,
+                "new_direct_item_id": str(new_item_ptr),
+                "split_position": {"time": pos, "measure": pos_ms},
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_item_auto_fade(
+        track_index: int,
+        item: int | str,
+        auto_fade_in_length: float | None = None,
+        auto_fade_out_length: float | None = None,
+    ) -> dict:
+        """Set automatic crossfade lengths for an item (``D_FADEINLEN_AUTO`` / ``D_FADEOUTLEN_AUTO``).
+
+        Auto-fades apply only when overlapping a neighbour; pass either or
+        both values in seconds. Set to ``0.0`` to disable that side's auto-fade.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            it = get_item_by_id_or_index(track, item)
+            if it is None:
+                return {"success": False, "error": "Item not found"}
+            if auto_fade_in_length is not None:
+                RPR.SetMediaItemInfo_Value(it.id, "D_FADEINLEN_AUTO", float(auto_fade_in_length))
+            if auto_fade_out_length is not None:
+                RPR.SetMediaItemInfo_Value(it.id, "D_FADEOUTLEN_AUTO", float(auto_fade_out_length))
+            return {
+                "success": True,
+                "track_index": track_index,
+                "item": str(item),
+                "auto_fade_in_length": auto_fade_in_length,
+                "auto_fade_out_length": auto_fade_out_length,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def select_items_in_range(
+        track_index: int | None = None,
+        start_time: float | None = None,
+        end_time: float | None = None,
+        start_measure: str | None = None,
+        end_measure: str | None = None,
+        exclusive: bool = True,
+    ) -> dict:
+        """Select every item overlapping a time range.
+
+        ``track_index=None`` searches every track; otherwise restricts to that
+        track. ``exclusive=True`` (default) deselects items outside the range
+        before selecting.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            s, _ = resolve_start(start_time, start_measure, project)
+            if end_time is not None:
+                e = float(end_time)
+            elif end_measure is not None:
+                from reaper_mcp.utils.positions import position_to_time
+
+                e = position_to_time(end_measure, project)
+            else:
+                return {"success": False, "error": "Provide end_time or end_measure"}
+            if exclusive:
+                project.select_all_items(False)
+            selected = []
+            track_range = (
+                [track_index] if track_index is not None else list(range(project.n_tracks))
+            )
+            for ti in track_range:
+                track = project.tracks[ti]
+                for ii, it in enumerate(track.items):
+                    if it.position + it.length >= s and it.position <= e:
+                        RPR.SetMediaItemSelected(it.id, True)
+                        selected.append(
+                            {"track_index": ti, "item_index": ii, "direct_item_id": str(it.id)}
+                        )
+            return {"success": True, "count": len(selected), "selected": selected}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def get_item_notes(track_index: int, item: int | str) -> dict:
+        """Return the per-item notes string (``P_NOTES``)."""
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            it = get_item_by_id_or_index(track, item)
+            if it is None:
+                return {"success": False, "error": "Item not found"}
+            result = RPR.GetSetMediaItemInfo_String(it.id, "P_NOTES", "", False)
+            if isinstance(result, tuple):
+                strings = [s for s in result if isinstance(s, str)]
+                notes = strings[-1] if strings else ""
+            else:
+                notes = str(result) if result else ""
+            return {
+                "success": True,
+                "track_index": track_index,
+                "item": str(item),
+                "notes": notes,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_item_notes(track_index: int, item: int | str, notes: str) -> dict:
+        """Set the per-item notes string (``P_NOTES``)."""
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            it = get_item_by_id_or_index(track, item)
+            if it is None:
+                return {"success": False, "error": "Item not found"}
+            ok = RPR.GetSetMediaItemInfo_String(it.id, "P_NOTES", str(notes), True)
+            if not ok:
+                return {"success": False, "error": "GetSetMediaItemInfo_String returned False"}
+            return {
+                "success": True,
+                "track_index": track_index,
+                "item": str(item),
+                "notes": notes,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_item_fade(
+        track_index: int,
+        item: int | str,
+        fade_in_length: float | None = None,
+        fade_out_length: float | None = None,
+        fade_in_shape: int | None = None,
+        fade_out_shape: int | None = None,
+        fade_in_dir: float | None = None,
+        fade_out_dir: float | None = None,
+    ) -> dict:
+        """Configure an item's fade in / fade out.
+
+        ``fade_*_length`` is in seconds. ``fade_*_shape`` is an integer 0-6
+        (0 = linear, 1 = fast start, 2 = fast end, 3 = fast start/end,
+        4 = slow start/end, 5 = bezier, 6 = S-curve). ``fade_*_dir`` is the
+        curve direction (-1.0 to 1.0; 0.0 = neutral). Pass ``None`` for any
+        field to leave it unchanged.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            it = get_item_by_id_or_index(track, item)
+            if it is None:
+                return {"success": False, "error": "Item not found"}
+            if fade_in_length is not None:
+                RPR.SetMediaItemInfo_Value(it.id, "D_FADEINLEN", float(fade_in_length))
+            if fade_out_length is not None:
+                RPR.SetMediaItemInfo_Value(it.id, "D_FADEOUTLEN", float(fade_out_length))
+            if fade_in_shape is not None:
+                if not 0 <= int(fade_in_shape) <= 6:
+                    return {"success": False, "error": "fade_in_shape must be 0-6"}
+                RPR.SetMediaItemInfo_Value(it.id, "C_FADEINSHAPE", float(int(fade_in_shape)))
+            if fade_out_shape is not None:
+                if not 0 <= int(fade_out_shape) <= 6:
+                    return {"success": False, "error": "fade_out_shape must be 0-6"}
+                RPR.SetMediaItemInfo_Value(it.id, "C_FADEOUTSHAPE", float(int(fade_out_shape)))
+            if fade_in_dir is not None:
+                RPR.SetMediaItemInfo_Value(
+                    it.id, "D_FADEINDIR", max(-1.0, min(1.0, float(fade_in_dir)))
+                )
+            if fade_out_dir is not None:
+                RPR.SetMediaItemInfo_Value(
+                    it.id, "D_FADEOUTDIR", max(-1.0, min(1.0, float(fade_out_dir)))
+                )
+            return {
+                "success": True,
+                "track_index": track_index,
+                "item": str(item),
+                "fade_in_length": fade_in_length,
+                "fade_out_length": fade_out_length,
+                "fade_in_shape": fade_in_shape,
+                "fade_out_shape": fade_out_shape,
+                "fade_in_dir": fade_in_dir,
+                "fade_out_dir": fade_out_dir,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
     def set_item_snap_offset(track_index: int, item: int | str, offset_seconds: float) -> dict:
         """Set an item's snap offset — the point within the item that snaps to grid.
 
@@ -378,6 +663,69 @@ def register_tools(mcp):
                 return {"success": False, "error": "No valid items"}
             RPR.Main_OnCommand(41588, 0)  # Item: Glue items
             return {"success": True, "glued_count": selected}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def select_item(track_index: int, item: int | str, exclusive: bool = False) -> dict:
+        """Select a media item.
+
+        ``exclusive=True`` deselects every other item in the project first —
+        useful when you want exactly this item selected for an action.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            it = get_item_by_id_or_index(track, item)
+            if it is None:
+                return {"success": False, "error": "Item not found"}
+            if exclusive:
+                project.select_all_items(False)
+            RPR.SetMediaItemSelected(it.id, True)
+            return {
+                "success": True,
+                "track_index": track_index,
+                "item": str(item),
+                "exclusive": bool(exclusive),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def deselect_item(track_index: int, item: int | str) -> dict:
+        """Deselect a media item."""
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            it = get_item_by_id_or_index(track, item)
+            if it is None:
+                return {"success": False, "error": "Item not found"}
+            RPR.SetMediaItemSelected(it.id, False)
+            return {"success": True, "track_index": track_index, "item": str(item)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def clear_item_selection() -> dict:
+        """Deselect every media item in the project."""
+        try:
+            project = get_project()
+            project.select_all_items(False)
+            return {"success": True}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def select_all_items() -> dict:
+        """Select every media item in the project."""
+        try:
+            project = get_project()
+            project.select_all_items(True)
+            return {"success": True}
         except Exception as e:
             return {"success": False, "error": str(e)}
 

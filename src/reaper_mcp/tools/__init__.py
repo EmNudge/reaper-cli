@@ -15,6 +15,13 @@ from __future__ import annotations
 TOOL_MODULES: list[tuple[str, str]] = [
     ("project", "Project tools — create/save/load, tempo, time signature"),
     (
+        "tempo_map",
+        "Tempo-map tools — multi-marker tempo + time-sig changes with curve shapes",
+    ),
+    ("track_groups", "Track grouping / VCA — 64-group flag system across tracks"),
+    ("razor_edits", "Razor-edit areas — REAPER's modern primary edit paradigm"),
+    ("lanes", "Fixed item lanes (FIPM) — modern comping workflow"),
+    (
         "tracks",
         "Track tools — CRUD, mixing params, color, peak, freeze, record input/monitor/arm, bus",
     ),

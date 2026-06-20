@@ -378,6 +378,335 @@ def register_tools(mcp):
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
+    def select_track(track_index: int, exclusive: bool = False) -> dict:
+        """Select a track.
+
+        ``exclusive=True`` deselects every other track first (equivalent to
+        REAPER's ``SetOnlyTrackSelected``).
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            if exclusive:
+                RPR.SetOnlyTrackSelected(track.id)
+            else:
+                RPR.SetTrackSelected(track.id, True)
+            return {
+                "success": True,
+                "track_index": track_index,
+                "exclusive": bool(exclusive),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def deselect_track(track_index: int) -> dict:
+        """Deselect a track without affecting other tracks' selection state."""
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            RPR.SetTrackSelected(track.id, False)
+            return {"success": True, "track_index": track_index}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def get_selected_tracks() -> dict:
+        """List every selected track in the project."""
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            out = []
+            for i in range(project.n_tracks):
+                t = project.tracks[i]
+                if RPR.IsTrackSelected(t.id):
+                    out.append({"index": i, "name": t.name})
+            return {"success": True, "count": len(out), "tracks": out}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_recording_mode(track_index: int, mode: str) -> dict:
+        """Set a track's record mode (``I_RECMODE``).
+
+        ``mode``:
+        - ``"input"`` (0) — record what the input plays
+        - ``"stereo_out"`` (1) — record the track's stereo output
+        - ``"none"`` (2) — disabled
+        - ``"stereo_out_latency_compensated"`` (3)
+        - ``"midi_output"`` (4)
+        - ``"mono_out"`` (5)
+        - ``"mono_out_latency_compensated"`` (6)
+        - ``"midi_overdub"`` (7)
+        - ``"midi_replace"`` (8)
+        - ``"multichannel_out"`` (9)
+        - ``"multichannel_out_latency_compensated"`` (10)
+        - ``"midi_touch_replace"`` (11)
+        - ``"midi_latch_replace"`` (12)
+        """
+        from reapy import reascript_api as RPR
+
+        _MODES = {
+            "input": 0,
+            "stereo_out": 1,
+            "none": 2,
+            "stereo_out_latency_compensated": 3,
+            "midi_output": 4,
+            "mono_out": 5,
+            "mono_out_latency_compensated": 6,
+            "midi_overdub": 7,
+            "midi_replace": 8,
+            "multichannel_out": 9,
+            "multichannel_out_latency_compensated": 10,
+            "midi_touch_replace": 11,
+            "midi_latch_replace": 12,
+        }
+        if mode not in _MODES:
+            return {
+                "success": False,
+                "error": f"Unknown mode {mode!r}. Valid: {sorted(_MODES)}",
+            }
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            RPR.SetMediaTrackInfo_Value(track.id, "I_RECMODE", float(_MODES[mode]))
+            return {
+                "success": True,
+                "track_index": track_index,
+                "mode": mode,
+                "raw_value": _MODES[mode],
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_track_height(track_index: int, height_pixels: int, locked: bool = False) -> dict:
+        """Set a track's display height in pixels. ``locked=True`` locks the height."""
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            RPR.SetMediaTrackInfo_Value(track.id, "I_HEIGHTOVERRIDE", float(int(height_pixels)))
+            RPR.SetMediaTrackInfo_Value(track.id, "B_HEIGHTLOCK", 1.0 if locked else 0.0)
+            return {
+                "success": True,
+                "track_index": track_index,
+                "height_pixels": int(height_pixels),
+                "locked": bool(locked),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_track_visible(
+        track_index: int,
+        show_in_tcp: bool | None = None,
+        show_in_mixer: bool | None = None,
+    ) -> dict:
+        """Show / hide a track in the Track Control Panel and/or Mixer Control Panel.
+
+        Pass ``None`` for either flag to leave it unchanged.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            if show_in_tcp is not None:
+                RPR.SetMediaTrackInfo_Value(track.id, "B_SHOWINTCP", 1.0 if show_in_tcp else 0.0)
+            if show_in_mixer is not None:
+                RPR.SetMediaTrackInfo_Value(
+                    track.id, "B_SHOWINMIXER", 1.0 if show_in_mixer else 0.0
+                )
+            return {
+                "success": True,
+                "track_index": track_index,
+                "show_in_tcp": show_in_tcp,
+                "show_in_mixer": show_in_mixer,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_track_icon(track_index: int, icon_path: str | None) -> dict:
+        """Set a track's icon to an image file, or clear it with ``None`` / empty string.
+
+        ``icon_path`` should be an absolute path to a PNG/JPG/etc. file; pass
+        ``None`` or ``""`` to remove the current icon.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            value = "" if icon_path is None else str(icon_path)
+            ok = RPR.GetSetMediaTrackInfo_String(track.id, "P_ICON", value, True)
+            if not ok:
+                return {"success": False, "error": "GetSetMediaTrackInfo_String returned False"}
+            return {
+                "success": True,
+                "track_index": track_index,
+                "icon_path": value or None,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_track_automation_mode(track_index: int, mode: str) -> dict:
+        """Set a track's automation read/write behaviour (``I_AUTOMODE``).
+
+        ``mode``: ``"trim"`` (read off, fader free), ``"read"``, ``"touch"``,
+        ``"latch"``, ``"write"``, ``"latch_preview"``.
+        """
+        from reapy import reascript_api as RPR
+
+        _MODES = {
+            "trim": 0,
+            "read": 1,
+            "touch": 2,
+            "write": 3,
+            "latch": 4,
+            "latch_preview": 5,
+        }
+        if mode not in _MODES:
+            return {
+                "success": False,
+                "error": f"Unknown mode {mode!r}. Valid: {sorted(_MODES)}",
+            }
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            RPR.SetMediaTrackInfo_Value(track.id, "I_AUTOMODE", float(_MODES[mode]))
+            return {
+                "success": True,
+                "track_index": track_index,
+                "mode": mode,
+                "raw_value": _MODES[mode],
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def get_track_automation_mode(track_index: int) -> dict:
+        """Return a track's automation mode."""
+        from reapy import reascript_api as RPR
+
+        _NAMES = {
+            0: "trim",
+            1: "read",
+            2: "touch",
+            3: "write",
+            4: "latch",
+            5: "latch_preview",
+        }
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            value = int(RPR.GetMediaTrackInfo_Value(track.id, "I_AUTOMODE"))
+            return {
+                "success": True,
+                "track_index": track_index,
+                "mode": _NAMES.get(value, f"unknown_{value}"),
+                "raw_value": value,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_track_midi_input(
+        track_index: int,
+        device_index: int,
+        channel: int = 0,
+        all_channels: bool = False,
+    ) -> dict:
+        """Set the per-device, per-channel MIDI input for a track.
+
+        ``device_index``: 0-based MIDI input device. ``channel``: 0-15 (one
+        channel), or set ``all_channels=True`` to receive every channel from
+        that device. The ``midi_all`` convenience case (every device, every
+        channel) lives in ``set_track_input(input_type="midi_all")``.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            if device_index < 0 or device_index > 62:
+                return {"success": False, "error": "device_index must be 0-62"}
+            if not 0 <= channel <= 15 and not all_channels:
+                return {"success": False, "error": "channel must be 0-15"}
+            chan_bits = 0 if all_channels else int(channel) + 1
+            value = 4096 | (int(device_index) << 5) | chan_bits
+            project = get_project()
+            track = project.tracks[track_index]
+            RPR.SetMediaTrackInfo_Value(track.id, "I_RECINPUT", float(value))
+            return {
+                "success": True,
+                "track_index": track_index,
+                "device_index": int(device_index),
+                "channel": int(channel),
+                "all_channels": bool(all_channels),
+                "raw_value": value,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_track_mixer_order(track_index: int, mcp_x: int) -> dict:
+        """Reorder a track in the Mixer Control Panel (``I_MCPX`` slot).
+
+        Note: MCP positions are independent of TCP positions; this only moves
+        the track horizontally in the Mixer view.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            RPR.SetMediaTrackInfo_Value(track.id, "I_MCPX", float(int(mcp_x)))
+            return {
+                "success": True,
+                "track_index": track_index,
+                "mcp_x": int(mcp_x),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def move_track(track_index: int, new_position: int) -> dict:
+        """Move a track to a new position in the project (renumbering everything below).
+
+        Uses REAPER's track-reorder commands. ``new_position`` is the target
+        0-based index in the TCP; pass ``project.n_tracks`` to move to the end.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            n = project.n_tracks
+            if not 0 <= track_index < n:
+                return {"success": False, "error": f"track_index {track_index} out of range"}
+            if not 0 <= new_position <= n:
+                return {"success": False, "error": f"new_position {new_position} out of range"}
+            track = project.tracks[track_index]
+            # Use ReorderSelectedTracks: select only the source, then call API.
+            RPR.SetOnlyTrackSelected(track.id)
+            ok = RPR.ReorderSelectedTracks(int(new_position), 0)
+            if not ok:
+                return {"success": False, "error": "ReorderSelectedTracks returned False"}
+            return {
+                "success": True,
+                "from_index": track_index,
+                "to_position": int(new_position),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
     def get_track_info(track_index: int) -> dict:
         """Detailed info about a single track including its FX chain and items."""
         try:

@@ -388,6 +388,400 @@ def register_tools(mcp):
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
+    def set_take_preserve_pitch(
+        track_index: int, item: int | str, take_index: int, preserve: bool
+    ) -> dict:
+        """Toggle preserve-pitch-when-changing-rate (``B_PPITCH``) on a take.
+
+        When ``True``, playback-rate changes don't pitch-shift the audio (uses
+        REAPER's selected stretch algorithm). When ``False``, rate changes act
+        like a vinyl varispeed.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            _, _, it = _get_item(track_index, item)
+            take = it.takes[take_index]
+            RPR.SetMediaItemTakeInfo_Value(take.id, "B_PPITCH", 1.0 if preserve else 0.0)
+            return {
+                "success": True,
+                "track_index": track_index,
+                "take_index": int(take_index),
+                "preserve_pitch": bool(preserve),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_take_channel_mode(
+        track_index: int, item: int | str, take_index: int, mode: int
+    ) -> dict:
+        """Set the take's channel mode (``I_CHANMODE``).
+
+        Common values: 0 = normal, 1 = reverse stereo, 2 = mono (L+R sum),
+        3 = mono L, 4 = mono R. Higher values address specific stereo pairs
+        (66/67/... = channels 3+4, 5+6, …) on multichannel sources.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            _, _, it = _get_item(track_index, item)
+            take = it.takes[take_index]
+            RPR.SetMediaItemTakeInfo_Value(take.id, "I_CHANMODE", float(int(mode)))
+            return {
+                "success": True,
+                "track_index": track_index,
+                "take_index": int(take_index),
+                "channel_mode": int(mode),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_take_start_offset(
+        track_index: int, item: int | str, take_index: int, offset_seconds: float
+    ) -> dict:
+        """Set the take's source start offset in seconds (``D_STARTOFFS``).
+
+        Shifts which portion of the source plays at the item's beginning —
+        positive values skip into the source, negative values pre-roll.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            _, _, it = _get_item(track_index, item)
+            take = it.takes[take_index]
+            RPR.SetMediaItemTakeInfo_Value(take.id, "D_STARTOFFS", float(offset_seconds))
+            return {
+                "success": True,
+                "track_index": track_index,
+                "take_index": int(take_index),
+                "start_offset_seconds": float(offset_seconds),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_take_pitch_mode(track_index: int, item: int | str, take_index: int, mode: int) -> dict:
+        """Set the take's pitch-shift algorithm (``I_PITCHMODE``).
+
+        ``-1`` (REAPER default) uses the project-level pitch shift setting.
+        Other values reference a 16-bit packed (mode << 16) | submode encoding
+        for specific algorithms (élastique, Rubber Band, Rrreeeaaa, …). See
+        REAPER's preferences → Audio → Playback for the exact mapping; pass
+        the same integer REAPER stores in ``D_PITCHMODE`` for a take.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            _, _, it = _get_item(track_index, item)
+            take = it.takes[take_index]
+            RPR.SetMediaItemTakeInfo_Value(take.id, "I_PITCHMODE", float(int(mode)))
+            return {
+                "success": True,
+                "track_index": track_index,
+                "take_index": int(take_index),
+                "pitch_mode": int(mode),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def rename_take(track_index: int, item: int | str, take_index: int, name: str) -> dict:
+        """Rename a take by index."""
+        try:
+            _, _, it = _get_item(track_index, item)
+            take = it.takes[take_index]
+            take.name = name
+            return {
+                "success": True,
+                "track_index": track_index,
+                "take_index": int(take_index),
+                "name": take.name,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_take_volume(track_index: int, item: int | str, take_index: int, volume: float) -> dict:
+        """Set take volume as linear gain (``D_VOL``; 1.0 = unity, 2.0 = +6 dB)."""
+        from reapy import reascript_api as RPR
+
+        try:
+            _, _, it = _get_item(track_index, item)
+            take = it.takes[take_index]
+            RPR.SetMediaItemTakeInfo_Value(take.id, "D_VOL", float(volume))
+            return {
+                "success": True,
+                "track_index": track_index,
+                "take_index": int(take_index),
+                "volume": float(volume),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_take_pan(track_index: int, item: int | str, take_index: int, pan: float) -> dict:
+        """Set take pan (``D_PAN``; -1.0 left, 0.0 center, 1.0 right)."""
+        from reapy import reascript_api as RPR
+
+        try:
+            _, _, it = _get_item(track_index, item)
+            take = it.takes[take_index]
+            RPR.SetMediaItemTakeInfo_Value(take.id, "D_PAN", float(max(-1.0, min(1.0, pan))))
+            return {
+                "success": True,
+                "track_index": track_index,
+                "take_index": int(take_index),
+                "pan": float(pan),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def add_take_marker(
+        track_index: int,
+        item: int | str,
+        take_index: int,
+        src_position_seconds: float,
+        name: str = "",
+        color: str | None = None,
+    ) -> dict:
+        """Add a take marker at a take-source position.
+
+        ``src_position_seconds`` is measured from the take's source start
+        (NOT project time). ``color`` is an optional ``#RRGGBB`` hex; pass
+        ``None`` to leave uncolored.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            _, _, it = _get_item(track_index, item)
+            take = it.takes[take_index]
+            color_v = 0
+            if color is not None:
+                s = color.lstrip("#")
+                if len(s) != 6:
+                    return {"success": False, "error": f"Invalid hex color: {color!r}"}
+                rv, gv, bv = int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)
+                color_v = int(RPR.ColorToNative(rv, gv, bv)) | 0x1000000
+            new_idx = int(
+                RPR.SetTakeMarker(take.id, -1, str(name), float(src_position_seconds), color_v)
+            )
+            if new_idx < 0:
+                return {"success": False, "error": "SetTakeMarker returned negative index"}
+            return {
+                "success": True,
+                "track_index": track_index,
+                "take_index": int(take_index),
+                "marker_index": new_idx,
+                "src_position_seconds": float(src_position_seconds),
+                "name": name,
+                "color": color,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def list_take_markers(track_index: int, item: int | str, take_index: int) -> dict:
+        """List every take marker on a take."""
+        from reapy import reascript_api as RPR
+
+        try:
+            _, _, it = _get_item(track_index, item)
+            take = it.takes[take_index]
+            count = int(RPR.GetNumTakeMarkers(take.id))
+            markers = []
+            for i in range(count):
+                result = RPR.GetTakeMarker(take.id, i, 0.0, "", 512, 0)
+                if not isinstance(result, tuple):
+                    continue
+                # Reapy returns various tuple shapes — extract by type.
+                src_pos = next((v for v in result if isinstance(v, float)), 0.0)
+                name = next((v for v in result if isinstance(v, str)), "")
+                ints = [v for v in result if isinstance(v, int)]
+                color_v = ints[-1] if ints else 0
+                markers.append(
+                    {
+                        "index": i,
+                        "src_position_seconds": float(src_pos),
+                        "name": name,
+                        "color_native": int(color_v),
+                    }
+                )
+            return {"success": True, "count": len(markers), "markers": markers}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def delete_take_marker(
+        track_index: int, item: int | str, take_index: int, marker_index: int
+    ) -> dict:
+        """Delete a take marker by index."""
+        from reapy import reascript_api as RPR
+
+        try:
+            _, _, it = _get_item(track_index, item)
+            take = it.takes[take_index]
+            ok = RPR.DeleteTakeMarker(take.id, int(marker_index))
+            if not ok:
+                return {
+                    "success": False,
+                    "error": f"DeleteTakeMarker returned False (marker_index={marker_index})",
+                }
+            return {"success": True, "deleted_marker_index": int(marker_index)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def add_stretch_marker(
+        track_index: int,
+        item: int | str,
+        take_index: int,
+        position_seconds: float,
+        src_position_seconds: float | None = None,
+    ) -> dict:
+        """Add a stretch marker on a take.
+
+        ``position_seconds`` is the playback-time position (seconds from take
+        start). ``src_position_seconds`` is the source-time anchor; pass
+        ``None`` to let REAPER compute it (no stretch, just a pin).
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            _, _, it = _get_item(track_index, item)
+            take = it.takes[take_index]
+            src = float(src_position_seconds) if src_position_seconds is not None else -1.0
+            new_idx = int(RPR.SetTakeStretchMarker(take.id, -1, float(position_seconds), src))
+            if new_idx < 0:
+                return {"success": False, "error": "SetTakeStretchMarker returned negative index"}
+            return {
+                "success": True,
+                "track_index": track_index,
+                "take_index": int(take_index),
+                "marker_index": new_idx,
+                "position_seconds": float(position_seconds),
+                "src_position_seconds": (
+                    float(src_position_seconds) if src_position_seconds is not None else None
+                ),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def list_stretch_markers(track_index: int, item: int | str, take_index: int) -> dict:
+        """List every stretch marker on a take, with slopes."""
+        from reapy import reascript_api as RPR
+
+        try:
+            _, _, it = _get_item(track_index, item)
+            take = it.takes[take_index]
+            count = int(RPR.GetTakeNumStretchMarkers(take.id))
+            markers = []
+            for i in range(count):
+                result = RPR.GetTakeStretchMarker(take.id, i, 0.0, 0.0)
+                if not isinstance(result, tuple) or len(result) < 3:
+                    continue
+                # Returns (ok-flag-int, pos, src_pos)
+                idx_or_ok = result[0]
+                if isinstance(idx_or_ok, int) and idx_or_ok < 0:
+                    continue
+                floats = [v for v in result if isinstance(v, float)]
+                if len(floats) < 2:
+                    continue
+                pos, src_pos = floats[0], floats[1]
+                slope = float(RPR.GetTakeStretchMarkerSlope(take.id, i))
+                markers.append(
+                    {
+                        "index": i,
+                        "position_seconds": float(pos),
+                        "src_position_seconds": float(src_pos),
+                        "slope": slope,
+                    }
+                )
+            return {"success": True, "count": len(markers), "markers": markers}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_stretch_marker_slope(
+        track_index: int, item: int | str, take_index: int, marker_index: int, slope: float
+    ) -> dict:
+        """Set the curve slope of a stretch marker.
+
+        ``slope``: -1.0 (max negative curve) to 1.0 (max positive curve);
+        0.0 is straight.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            _, _, it = _get_item(track_index, item)
+            take = it.takes[take_index]
+            slope_clamped = max(-1.0, min(1.0, float(slope)))
+            ok = RPR.SetTakeStretchMarkerSlope(take.id, int(marker_index), slope_clamped)
+            if not ok:
+                return {
+                    "success": False,
+                    "error": (
+                        f"SetTakeStretchMarkerSlope returned False (marker_index={marker_index})"
+                    ),
+                }
+            return {
+                "success": True,
+                "marker_index": int(marker_index),
+                "slope": slope_clamped,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def delete_stretch_marker(
+        track_index: int, item: int | str, take_index: int, marker_index: int
+    ) -> dict:
+        """Delete a stretch marker by index."""
+        from reapy import reascript_api as RPR
+
+        try:
+            _, _, it = _get_item(track_index, item)
+            take = it.takes[take_index]
+            ok = RPR.DeleteTakeStretchMarkers(take.id, int(marker_index), int(marker_index) + 1)
+            if not ok:
+                return {
+                    "success": False,
+                    "error": (
+                        f"DeleteTakeStretchMarkers returned False (marker_index={marker_index})"
+                    ),
+                }
+            return {"success": True, "deleted_marker_index": int(marker_index)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def get_take_playback_params(track_index: int, item: int | str, take_index: int) -> dict:
+        """Return preserve-pitch, channel mode, start offset, pitch mode, pitch, rate."""
+        from reapy import reascript_api as RPR
+
+        try:
+            _, _, it = _get_item(track_index, item)
+            take = it.takes[take_index]
+            return {
+                "success": True,
+                "track_index": track_index,
+                "take_index": int(take_index),
+                "preserve_pitch": bool(RPR.GetMediaItemTakeInfo_Value(take.id, "B_PPITCH")),
+                "channel_mode": int(RPR.GetMediaItemTakeInfo_Value(take.id, "I_CHANMODE")),
+                "start_offset_seconds": float(
+                    RPR.GetMediaItemTakeInfo_Value(take.id, "D_STARTOFFS")
+                ),
+                "pitch_mode": int(RPR.GetMediaItemTakeInfo_Value(take.id, "I_PITCHMODE")),
+                "pitch_semitones": getattr(take, "pitch", 0.0),
+                "playback_rate": getattr(take, "playback_rate", 1.0),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
     def remove_take_fx(track_index: int, item: int | str, take_index: int, fx_index: int) -> dict:
         """Remove an FX from a take's FX chain."""
         from reapy import reascript_api as RPR

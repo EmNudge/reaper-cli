@@ -244,6 +244,209 @@ def register_tools(mcp):
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
+    def show_track_envelope(track_index: int, envelope_name: str, show: bool = True) -> dict:
+        """Show or hide a built-in track envelope (e.g. ``"Volume"``, ``"Pan"``, ``"Mute"``, ``"Width"``).
+
+        REAPER creates envelopes on demand the first time you show them; this
+        is the programmatic equivalent of the right-click → "Track envelopes"
+        menu. Use ``add_envelope_point`` next to write automation.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            # Use the "Show envelope" command via reapy's ToggleTrackSendUIVis-style call.
+            # GetTrackEnvelopeByChunkName is the universal getter.
+            chunk_name = envelope_name.upper()
+            if chunk_name == "VOLUME":
+                chunk_name = "VOLENV2"
+            elif chunk_name == "PAN":
+                chunk_name = "PANENV2"
+            elif chunk_name == "MUTE":
+                chunk_name = "MUTEENV"
+            elif chunk_name == "WIDTH":
+                chunk_name = "WIDTHENV2"
+            env = RPR.GetTrackEnvelopeByChunkName(track.id, chunk_name)
+            # If absent and we want it shown, the action route works:
+            if not env and show:
+                # Pre-defined action IDs per envelope. Fall back to the
+                # GetTrackEnvelopeByName API which creates the envelope on
+                # first access in newer REAPER builds.
+                env = RPR.GetTrackEnvelopeByName(track.id, envelope_name)
+            if not env:
+                return {
+                    "success": False,
+                    "error": f"Could not resolve envelope {envelope_name!r}",
+                }
+            return {
+                "success": True,
+                "track_index": track_index,
+                "envelope_name": envelope_name,
+                "envelope_chunk": chunk_name,
+                "visible": bool(show),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def get_take_envelopes(track_index: int, item: int | str, take_index: int) -> dict:
+        """List every envelope on a specific take (volume, pan, mute, pitch, …)."""
+        from reapy import reascript_api as RPR
+
+        from reaper_mcp.utils.items import get_item_by_id_or_index
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            it = get_item_by_id_or_index(track, item)
+            if it is None:
+                return {"success": False, "error": "Item not found"}
+            take = it.takes[take_index]
+            envelopes = []
+            for name in ("Volume", "Pan", "Mute", "Pitch"):
+                env = RPR.GetTakeEnvelopeByName(take.id, name)
+                if env:
+                    point_count = int(RPR.CountEnvelopePoints(env))
+                    envelopes.append({"name": name, "point_count": point_count})
+            return {
+                "success": True,
+                "track_index": track_index,
+                "take_index": int(take_index),
+                "envelopes": envelopes,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def add_take_envelope_point(
+        track_index: int,
+        item: int | str,
+        take_index: int,
+        envelope_name: str,
+        position_seconds: float,
+        value: float,
+        shape: int | str = "linear",
+        tension: float = 0.0,
+    ) -> dict:
+        """Add a point to a take envelope (``"Volume"``, ``"Pan"``, ``"Mute"``, ``"Pitch"``).
+
+        ``position_seconds`` is the take-relative position (0 = take start).
+        """
+        from reapy import reascript_api as RPR
+
+        from reaper_mcp.utils.items import get_item_by_id_or_index
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            it = get_item_by_id_or_index(track, item)
+            if it is None:
+                return {"success": False, "error": "Item not found"}
+            take = it.takes[take_index]
+            env = RPR.GetTakeEnvelopeByName(take.id, envelope_name)
+            if not env:
+                return {
+                    "success": False,
+                    "error": f"Take envelope not found: {envelope_name!r}",
+                }
+            shape_int = _resolve_shape(shape)
+            RPR.InsertEnvelopePoint(
+                env,
+                float(position_seconds),
+                float(value),
+                int(shape_int),
+                float(tension),
+                False,
+                True,
+            )
+            RPR.Envelope_SortPoints(env)
+            return {
+                "success": True,
+                "envelope_name": envelope_name,
+                "position_seconds": float(position_seconds),
+                "value": float(value),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def insert_automation_item(
+        track_index: int,
+        envelope_name: str,
+        position_time: float,
+        length_seconds: float,
+        pool_id: int = -1,
+    ) -> dict:
+        """Insert an automation item (AI) on a track envelope.
+
+        ``pool_id``: ``-1`` to create a fresh pool, or pass an existing pool's
+        id to share content (so editing one AI affects every AI in the pool).
+        Use ``list_envelopes`` for envelope names.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            env = _get_envelope(track, envelope_name)
+            if not env:
+                return {"success": False, "error": f"Envelope not found: {envelope_name!r}"}
+            new_idx = int(
+                RPR.InsertAutomationItem(
+                    env, int(pool_id), float(position_time), float(length_seconds)
+                )
+            )
+            if new_idx < 0:
+                return {"success": False, "error": "InsertAutomationItem returned negative index"}
+            return {
+                "success": True,
+                "track_index": track_index,
+                "envelope_name": envelope_name,
+                "automation_item_index": new_idx,
+                "position_seconds": float(position_time),
+                "length_seconds": float(length_seconds),
+                "pool_id": int(pool_id),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def list_automation_items(track_index: int, envelope_name: str) -> dict:
+        """List every automation item on a track envelope."""
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            env = _get_envelope(track, envelope_name)
+            if not env:
+                return {"success": False, "error": f"Envelope not found: {envelope_name!r}"}
+            count = int(RPR.CountAutomationItems(env))
+            items = []
+            for i in range(count):
+                pos = float(RPR.GetSetAutomationItemInfo(env, i, "D_POSITION", 0.0, False))
+                length = float(RPR.GetSetAutomationItemInfo(env, i, "D_LENGTH", 0.0, False))
+                pool = int(RPR.GetSetAutomationItemInfo(env, i, "D_POOL_ID", 0.0, False))
+                items.append(
+                    {
+                        "index": i,
+                        "position_seconds": pos,
+                        "length_seconds": length,
+                        "pool_id": pool,
+                    }
+                )
+            return {
+                "success": True,
+                "track_index": track_index,
+                "envelope_name": envelope_name,
+                "count": count,
+                "items": items,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
     def clear_envelope(track_index: int, envelope_name: str) -> dict:
         """Remove every point from a named envelope."""
         from reapy import reascript_api as RPR

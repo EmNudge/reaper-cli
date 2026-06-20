@@ -188,6 +188,85 @@ def register_tools(mcp):
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
+    def move_fx(track_index: int, fx_index: int, new_index: int) -> dict:
+        """Move an FX to a new slot in the same track's FX chain (``TrackFX_CopyToTrack`` with move flag)."""
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            n = int(track.n_fxs)
+            if not 0 <= fx_index < n:
+                return {"success": False, "error": f"fx_index {fx_index} out of range"}
+            if not 0 <= new_index < n:
+                return {"success": False, "error": f"new_index {new_index} out of range"}
+            # TrackFX_CopyToTrack(src_track, src_fx, dst_track, dst_fx, is_move)
+            RPR.TrackFX_CopyToTrack(track.id, int(fx_index), track.id, int(new_index), True)
+            return {
+                "success": True,
+                "track_index": track_index,
+                "from_index": int(fx_index),
+                "to_index": int(new_index),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def copy_fx_to_track(
+        src_track_index: int,
+        src_fx_index: int,
+        dst_track_index: int,
+        dst_fx_index: int = -1,
+        move: bool = False,
+    ) -> dict:
+        """Copy (or move) an FX from one track to another.
+
+        ``dst_fx_index=-1`` appends at the end of the destination chain.
+        ``move=True`` removes the source FX after copying.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            src = project.tracks[src_track_index]
+            dst = project.tracks[dst_track_index]
+            n_dst = int(dst.n_fxs)
+            dst_idx = n_dst if dst_fx_index < 0 else int(dst_fx_index)
+            RPR.TrackFX_CopyToTrack(src.id, int(src_fx_index), dst.id, dst_idx, bool(move))
+            return {
+                "success": True,
+                "src_track_index": src_track_index,
+                "src_fx_index": int(src_fx_index),
+                "dst_track_index": dst_track_index,
+                "dst_fx_index": dst_idx,
+                "move": bool(move),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def bypass_all_fx(track_index: int, bypassed: bool = True) -> dict:
+        """Bypass (or un-bypass) every FX on a track's main chain."""
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            changed = 0
+            for i in range(track.n_fxs):
+                fx = track.fxs[i]
+                target = not bypassed  # is_enabled = not bypassed
+                if fx.is_enabled != target:
+                    fx.is_enabled = target
+                    changed += 1
+            return {
+                "success": True,
+                "track_index": track_index,
+                "bypassed": bool(bypassed),
+                "fx_changed": changed,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
     def load_fx_preset(track_index: int, fx_index: int, preset_name: str) -> dict:
         """Load an existing saved preset by name on an FX plugin."""
         try:

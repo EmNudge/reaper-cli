@@ -125,6 +125,29 @@ def register_tools(mcp):
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
+    def delete_track_template(template_name: str) -> dict:
+        """Delete a ``.RTrackTemplate`` file from REAPER's TrackTemplates folder.
+
+        ``template_name`` follows the same conventions as
+        ``save_track_template`` — forward slashes for subdirectories, with or
+        without the ``.RTrackTemplate`` suffix.
+        """
+        try:
+            parts = [_sanitize(seg) for seg in template_name.replace("\\", "/").split("/")]
+            parts[-1] = parts[-1].removesuffix(".RTrackTemplate")
+            path = _templates_dir().joinpath(*parts).with_suffix(".RTrackTemplate")
+            if not path.exists():
+                return {"success": False, "error": f"Template not found: {path}"}
+            path.unlink()
+            return {
+                "success": True,
+                "template_name": template_name,
+                "deleted": str(path),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
     def apply_track_template(template_name: str, target_track_index: int | None = None) -> dict:
         """Apply a track template to a track.
 

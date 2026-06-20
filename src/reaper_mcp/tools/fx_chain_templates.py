@@ -146,6 +146,22 @@ def register_tools(mcp):
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
+    def delete_fx_chain_template(template_name: str) -> dict:
+        """Delete a ``.RfxChain`` file from REAPER's FXChains folder."""
+        try:
+            path = _resolve_chain_path(template_name)
+            if not path.exists():
+                return {"success": False, "error": f"Template not found: {path}"}
+            path.unlink()
+            return {
+                "success": True,
+                "template_name": template_name,
+                "deleted": str(path),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
     def apply_fx_chain_template(track_index: int, template_name: str, replace: bool = True) -> dict:
         """Apply a saved FX chain to a track.
 

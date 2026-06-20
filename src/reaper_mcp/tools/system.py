@@ -676,3 +676,106 @@ def register_tools(mcp):
             return {"success": True, "description": description, "flags": flags}
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def get_metronome_enabled() -> dict:
+        """Return whether the metronome (click track) is currently enabled."""
+        from reapy import reascript_api as RPR
+
+        try:
+            state = int(RPR.GetToggleCommandState(40364))
+            return {"success": True, "enabled": bool(state == 1)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_metronome_enabled(enabled: bool) -> dict:
+        """Enable or disable the metronome."""
+        from reapy import reascript_api as RPR
+
+        try:
+            current = int(RPR.GetToggleCommandState(40364)) == 1
+            if current != bool(enabled):
+                RPR.Main_OnCommand(40364, 0)  # Options: Toggle metronome
+            return {"success": True, "enabled": bool(enabled)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def get_snap_enabled() -> dict:
+        """Return whether snapping (snap-to-grid) is currently enabled."""
+        from reapy import reascript_api as RPR
+
+        try:
+            state = int(RPR.GetToggleCommandState(1157))
+            return {"success": True, "enabled": bool(state == 1)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_snap_enabled(enabled: bool) -> dict:
+        """Enable or disable snapping (snap-to-grid)."""
+        from reapy import reascript_api as RPR
+
+        try:
+            current = int(RPR.GetToggleCommandState(1157)) == 1
+            if current != bool(enabled):
+                RPR.Main_OnCommand(1157, 0)  # Options: Toggle snapping
+            return {"success": True, "enabled": bool(enabled)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def get_ripple_edit_mode() -> dict:
+        """Return ripple-edit mode: ``"off"``, ``"per_track"``, or ``"all_tracks"``."""
+        from reapy import reascript_api as RPR
+
+        try:
+            per_track = int(RPR.GetToggleCommandState(1155)) == 1
+            all_tracks = int(RPR.GetToggleCommandState(1156)) == 1
+            if all_tracks:
+                mode = "all_tracks"
+            elif per_track:
+                mode = "per_track"
+            else:
+                mode = "off"
+            return {"success": True, "mode": mode}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_ripple_edit_mode(mode: str) -> dict:
+        """Set ripple-edit mode. ``mode`` must be ``"off"``, ``"per_track"``, or ``"all_tracks"``.
+
+        Ripple editing in REAPER means edits to items (move, delete, trim) push
+        later items along the timeline. Per-track only ripples within a single
+        track; all-tracks ripples across the project.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            mode_norm = mode.lower().strip()
+            valid = {"off", "per_track", "all_tracks"}
+            if mode_norm not in valid:
+                return {"success": False, "error": f"mode must be one of {sorted(valid)}"}
+            per_track = int(RPR.GetToggleCommandState(1155)) == 1
+            all_tracks = int(RPR.GetToggleCommandState(1156)) == 1
+            # Toggle each command to drive state to the target.
+            want_per_track = mode_norm == "per_track"
+            want_all_tracks = mode_norm == "all_tracks"
+            # The two toggles are mutually exclusive in REAPER, so we need to
+            # turn off whichever is on before turning on the other.
+            if per_track and not want_per_track:
+                RPR.Main_OnCommand(1155, 0)
+            if all_tracks and not want_all_tracks:
+                RPR.Main_OnCommand(1156, 0)
+            # Re-read in case turning one off auto-cleared the other.
+            per_track = int(RPR.GetToggleCommandState(1155)) == 1
+            all_tracks = int(RPR.GetToggleCommandState(1156)) == 1
+            if want_per_track and not per_track:
+                RPR.Main_OnCommand(1155, 0)
+            if want_all_tracks and not all_tracks:
+                RPR.Main_OnCommand(1156, 0)
+            return {"success": True, "mode": mode_norm}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
