@@ -244,6 +244,131 @@ def register_tools(mcp):
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
+    def delete_midi_note(track_index: int, item: int | str, note_index: int) -> dict:
+        """Delete a single MIDI note by its index within the take.
+
+        Note indices come from ``get_midi_notes`` (each note's position in the
+        returned list). Indices shift after a delete, so iterate from highest
+        to lowest if removing several.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            it = get_item_by_id_or_index(track, item)
+            if it is None:
+                return {"success": False, "error": "MIDI item not found"}
+            take = it.active_take
+            if take is None or not take.is_midi:
+                return {"success": False, "error": "Item is not a MIDI item"}
+            ok = RPR.MIDI_DeleteNote(take.id, int(note_index))
+            if not ok:
+                return {
+                    "success": False,
+                    "error": f"MIDI_DeleteNote returned False (note_index={note_index} out of range?)",
+                }
+            return {
+                "success": True,
+                "track_index": track_index,
+                "item": str(item),
+                "deleted_note_index": int(note_index),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_midi_note(
+        track_index: int,
+        item: int | str,
+        note_index: int,
+        pitch: int | None = None,
+        velocity: int | None = None,
+        channel: int | None = None,
+        muted: bool | None = None,
+        start_time: float | None = None,
+        start_measure: str | None = None,
+        length_time: float | None = None,
+        length_measure: str | None = None,
+        relative_start: bool = False,
+    ) -> dict:
+        """Edit an existing MIDI note in place.
+
+        Pass only the fields you want to change; everything else is preserved.
+        Position rules match ``add_midi_note`` — ``relative_start=True`` treats
+        ``start_time`` / ``start_measure`` as offsets from the item's start.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            track = project.tracks[track_index]
+            it = get_item_by_id_or_index(track, item)
+            if it is None:
+                return {"success": False, "error": "MIDI item not found"}
+            take = it.active_take
+            if take is None or not take.is_midi:
+                return {"success": False, "error": "Item is not a MIDI item"}
+            idx = int(note_index)
+            cur = RPR.MIDI_GetNote(take.id, idx, False, False, 0.0, 0.0, 0, 0, 0)
+            if not isinstance(cur, tuple) or len(cur) < 8:
+                return {"success": False, "error": "MIDI_GetNote returned unexpected shape"}
+            ok, sel, cur_muted, start_ppq, end_ppq, cur_chan, cur_pitch, cur_vel = cur[:8]
+            if not ok:
+                return {"success": False, "error": f"Note {idx} not found"}
+
+            new_pitch = int(pitch) if pitch is not None else int(cur_pitch)
+            new_vel = int(velocity) if velocity is not None else int(cur_vel)
+            new_chan = int(channel) if channel is not None else int(cur_chan)
+            new_muted = bool(muted) if muted is not None else bool(cur_muted)
+            new_start_ppq = start_ppq
+            new_end_ppq = end_ppq
+
+            if start_time is not None or start_measure is not None:
+                item_start = it.position
+                if start_time is not None:
+                    t = item_start + float(start_time) if relative_start else float(start_time)
+                elif relative_start:
+                    offset = measure_length_to_time(str(start_measure), item_start, project)
+                    t = item_start + offset
+                else:
+                    t = position_to_time(str(start_measure), project)
+                new_start_ppq = RPR.MIDI_GetPPQPosFromProjTime(take.id, t)
+
+            if length_time is not None or length_measure is not None:
+                start_seconds = RPR.MIDI_GetProjTimeFromPPQPos(take.id, new_start_ppq)
+                length_s, _ = resolve_length(length_time, length_measure, start_seconds, project)
+                end_seconds = start_seconds + length_s
+                new_end_ppq = RPR.MIDI_GetPPQPosFromProjTime(take.id, end_seconds)
+
+            ok2 = RPR.MIDI_SetNote(
+                take.id,
+                idx,
+                bool(sel),
+                new_muted,
+                new_start_ppq,
+                new_end_ppq,
+                new_chan,
+                new_pitch,
+                new_vel,
+                False,
+            )
+            if not ok2:
+                return {"success": False, "error": "MIDI_SetNote returned False"}
+            return {
+                "success": True,
+                "track_index": track_index,
+                "item": str(item),
+                "note_index": idx,
+                "pitch": new_pitch,
+                "velocity": new_vel,
+                "channel": new_chan,
+                "muted": new_muted,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
     def clear_midi_item(track_index: int, item: int | str) -> dict:
         """Replace a MIDI item with an empty one at the same position/length."""
         from reaper_mcp.utils.items import delete_item

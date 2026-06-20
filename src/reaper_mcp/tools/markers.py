@@ -23,6 +23,23 @@ def _find_marker_by_index(project, target_index: int, is_region: bool):
     return None
 
 
+def _resolve_rgb(
+    color: str | None, r: int | None, g: int | None, b: int | None
+) -> tuple[int, int, int] | None:
+    """Parse either a ``#RRGGBB`` hex string or three ints into ``(r, g, b)``.
+
+    Returns ``None`` if no valid input was provided.
+    """
+    if color is not None:
+        s = color.lstrip("#")
+        if len(s) != 6:
+            raise ValueError(f"Invalid hex color: {color!r}")
+        return int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)
+    if r is not None and g is not None and b is not None:
+        return int(r), int(g), int(b)
+    return None
+
+
 def register_tools(mcp):
     @mcp.tool()
     def create_region(
@@ -213,6 +230,134 @@ def register_tools(mcp):
                 "success": True,
                 "marker_index": marker_index,
                 "position_seconds": float(m.position),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_marker_color(
+        marker_index: int,
+        color: str | None = None,
+        r: int | None = None,
+        g: int | None = None,
+        b: int | None = None,
+    ) -> dict:
+        """Set a marker's color. Accept either ``#RRGGBB`` hex or three RGB ints."""
+        from reapy import reascript_api as RPR
+
+        try:
+            rgb = _resolve_rgb(color, r, g, b)
+            if rgb is None:
+                return {"success": False, "error": "Provide either a hex 'color' or r/g/b integers"}
+            rv, gv, bv = rgb
+            project = get_project()
+            m = _find_marker_by_index(project, marker_index, is_region=False)
+            if m is None:
+                return {"success": False, "error": f"Marker {marker_index} not found"}
+            native = RPR.ColorToNative(rv, gv, bv) | 0x1000000
+            ok = RPR.SetProjectMarker3(
+                project.id, marker_index, False, m.position, 0.0, getattr(m, "name", ""), native
+            )
+            if not ok:
+                return {
+                    "success": False,
+                    "error": f"SetProjectMarker3 returned False for marker {marker_index}",
+                }
+            return {
+                "success": True,
+                "marker_index": marker_index,
+                "color": f"#{rv:02X}{gv:02X}{bv:02X}",
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_region_color(
+        region_index: int,
+        color: str | None = None,
+        r: int | None = None,
+        g: int | None = None,
+        b: int | None = None,
+    ) -> dict:
+        """Set a region's color. Accept either ``#RRGGBB`` hex or three RGB ints."""
+        from reapy import reascript_api as RPR
+
+        try:
+            rgb = _resolve_rgb(color, r, g, b)
+            if rgb is None:
+                return {"success": False, "error": "Provide either a hex 'color' or r/g/b integers"}
+            rv, gv, bv = rgb
+            project = get_project()
+            reg = _find_marker_by_index(project, region_index, is_region=True)
+            if reg is None:
+                return {"success": False, "error": f"Region {region_index} not found"}
+            native = RPR.ColorToNative(rv, gv, bv) | 0x1000000
+            ok = RPR.SetProjectMarker3(
+                project.id,
+                region_index,
+                True,
+                reg.start,
+                reg.end,
+                getattr(reg, "name", ""),
+                native,
+            )
+            if not ok:
+                return {
+                    "success": False,
+                    "error": f"SetProjectMarker3 returned False for region {region_index}",
+                }
+            return {
+                "success": True,
+                "region_index": region_index,
+                "color": f"#{rv:02X}{gv:02X}{bv:02X}",
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def goto_next_marker() -> dict:
+        """Move the edit cursor to the next marker after the current cursor position."""
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            cur = project.cursor_position
+            candidates = sorted(
+                (float(m.position), m) for m in project.markers if m.position > cur + 1e-6
+            )
+            if not candidates:
+                return {"success": False, "error": "No marker after current cursor position"}
+            pos, m = candidates[0]
+            RPR.SetEditCurPos(pos, True, False)
+            return {
+                "success": True,
+                "marker_index": getattr(m, "index", None),
+                "name": getattr(m, "name", ""),
+                "position_seconds": pos,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def goto_previous_marker() -> dict:
+        """Move the edit cursor to the most recent marker before the current cursor position."""
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            cur = project.cursor_position
+            candidates = sorted(
+                (float(m.position), m) for m in project.markers if m.position < cur - 1e-6
+            )
+            if not candidates:
+                return {"success": False, "error": "No marker before current cursor position"}
+            pos, m = candidates[-1]
+            RPR.SetEditCurPos(pos, True, False)
+            return {
+                "success": True,
+                "marker_index": getattr(m, "index", None),
+                "name": getattr(m, "name", ""),
+                "position_seconds": pos,
             }
         except Exception as e:
             return {"success": False, "error": str(e)}

@@ -102,6 +102,23 @@ def register_tools(mcp):
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
+    def get_render_preset(name: str) -> dict:
+        """Return every stored key/value for a named render preset."""
+        try:
+            presets = _load_presets()
+            data = presets.get(name)
+            if data is None:
+                return {"success": False, "error": f"Preset not found: {name!r}"}
+            return {
+                "success": True,
+                "name": name,
+                "keys_stored": len(data),
+                "preset": data,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
     def save_render_preset(name: str, overwrite: bool = True) -> dict:
         """Snapshot the current project's render settings as a named preset.
 

@@ -78,6 +78,26 @@ def register_tools(mcp):
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
+    def close_project(save: bool = False) -> dict:
+        """Close the current project tab.
+
+        ``save=False`` (default) discards unsaved changes; ``save=True`` saves
+        first. After closing, REAPER switches to the next open project tab or
+        a fresh empty project if this was the last tab.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            if save:
+                project = get_project()
+                project.save()
+            # 40860 = File: Close current project tab
+            RPR.Main_OnCommand(40860, 0)
+            return {"success": True, "saved": bool(save)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
     def get_project_info() -> dict:
         """Return name, path, tempo, time signature, length, track count, markers, regions."""
         try:
@@ -160,6 +180,96 @@ def register_tools(mcp):
                 "denominator": info["time_sig_den"],
                 "bpm": info["bpm"],
             }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def get_project_notes() -> dict:
+        """Return the project notes string (REAPER's File → Project notes)."""
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            result = RPR.GetSetProjectNotes(project.id, False, "", 8192)
+            if isinstance(result, tuple):
+                strings = [s for s in result if isinstance(s, str)]
+                notes = strings[-1] if strings else ""
+            else:
+                notes = str(result) if result else ""
+            return {"success": True, "notes": notes}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_project_notes(notes: str) -> dict:
+        """Set the project notes string."""
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            RPR.GetSetProjectNotes(project.id, True, str(notes), len(notes) + 1)
+            return {"success": True, "notes": notes}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def get_grid_division() -> dict:
+        """Return the current arrange-view grid division as a fraction of a whole note.
+
+        E.g. ``0.25`` = quarter note, ``0.125`` = eighth, ``0.0625`` = sixteenth.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            # GetSetProjectGrid(proj, set, division, swingmode, swingamt)
+            result = RPR.GetSetProjectGrid(project.id, False, 0.0, 0, 0.0)
+            if not isinstance(result, tuple) or len(result) < 2:
+                return {"success": False, "error": "GetSetProjectGrid returned unexpected shape"}
+            floats = [v for v in result if isinstance(v, float)]
+            ints = [v for v in result if isinstance(v, int)]
+            division = floats[0] if floats else 0.25
+            swing_mode = ints[0] if ints else 0
+            swing_amount = floats[1] if len(floats) > 1 else 0.0
+            return {
+                "success": True,
+                "division": division,
+                "swing_mode": int(swing_mode),
+                "swing_amount": float(swing_amount),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def set_grid_division(division: float, swing_mode: int = 0, swing_amount: float = 0.0) -> dict:
+        """Set the arrange-view grid division (fraction of a whole note).
+
+        Common values: ``0.25`` quarter, ``0.125`` eighth, ``0.0625`` sixteenth,
+        ``1/3 * 0.25 ≈ 0.0833`` quarter triplet. ``swing_mode``: 0 off, 1 on.
+        ``swing_amount``: -1.0 to 1.0.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            project = get_project()
+            RPR.GetSetProjectGrid(
+                project.id, True, float(division), int(swing_mode), float(swing_amount)
+            )
+            return {
+                "success": True,
+                "division": float(division),
+                "swing_mode": int(swing_mode),
+                "swing_amount": float(swing_amount),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def get_project_length() -> dict:
+        """Return the total project length in seconds (last item end OR last marker)."""
+        try:
+            project = get_project()
+            return {"success": True, "length_seconds": float(project.length)}
         except Exception as e:
             return {"success": False, "error": str(e)}
 

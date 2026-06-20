@@ -110,6 +110,39 @@ def register_tools(mcp):
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
+    def uninstall_theme(theme_name: str) -> dict:
+        """Delete a theme file from REAPER's ColorThemes folder.
+
+        ``theme_name`` matches the same lookup as ``set_active_theme`` (with or
+        without ``.ReaperTheme`` / ``.ReaperThemeZip`` extension). If the
+        uninstalled theme is currently active, REAPER will fall back to its
+        default on next launch — this tool does NOT clear ``lastthemefn5``.
+        """
+        try:
+            root = _themes_dir()
+            candidates = [
+                root / theme_name,
+                root / f"{theme_name}.ReaperTheme",
+                root / f"{theme_name}.ReaperThemeZip",
+            ]
+            target = next((c for c in candidates if c.exists()), None)
+            if target is None:
+                return {
+                    "success": False,
+                    "error": (
+                        f"Theme not found: {theme_name!r}. Searched: {[str(c) for c in candidates]}"
+                    ),
+                }
+            target.unlink()
+            return {
+                "success": True,
+                "theme_name": theme_name,
+                "deleted": str(target),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
     def set_active_theme(theme_name: str) -> dict:
         """Set REAPER's active theme by name. Takes effect after restarting REAPER.
 

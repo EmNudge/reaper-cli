@@ -99,6 +99,21 @@ def register_tools(mcp):
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
+    def pause_project() -> dict:
+        """Pause playback (cursor stays at the current play position).
+
+        Use ``play_project`` to resume, or ``stop_transport`` to stop and
+        return the cursor to its pre-play position.
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            RPR.Main_OnCommand(1008, 0)  # Transport: Pause
+            return {"success": True, "message": "Playback paused"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
     def set_cursor_position(
         position_time: float | None = None, position_measure: str | None = None
     ) -> dict:

@@ -114,6 +114,22 @@ def register_tools(mcp):
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
+    def delete_project_template(template_name: str) -> dict:
+        """Delete a ``.RPP`` project template from REAPER's ProjectTemplates folder."""
+        try:
+            path = _resolve_template_path(template_name)
+            if not path.exists():
+                return {"success": False, "error": f"Template not found: {path}"}
+            path.unlink()
+            return {
+                "success": True,
+                "template_name": template_name,
+                "deleted": str(path),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
     def apply_project_template(template_name: str) -> dict:
         """Open a project template as the current project.
 
