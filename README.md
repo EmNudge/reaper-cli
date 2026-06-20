@@ -65,7 +65,9 @@ A few CLI conversion notes:
 Live tools need REAPER's distant python-reapy API. Setup is fully external —
 no need to launch ReaScripts from inside REAPER.
 
-1. **Quit REAPER** (the configurator needs exactly one or zero running instances so it can locate the right `reaper.ini`).
+1. **Quit REAPER**. The configurator edits `reaper.ini` and `reaper-kb.ini`
+   directly; REAPER overwrites them on shutdown, so any concurrent edit is
+   lost.
 
 2. Run the bundled one-shot:
 
@@ -77,11 +79,27 @@ no need to launch ReaScripts from inside REAPER.
    `reaper.ini` + `reaper-kb.ini` to enable Python ReaScripts, point REAPER at
    the venv's Python interpreter (so it can find `reapy`), open a web
    interface on port 2307 for reapy connections, and register the
-   `activate_reapy_server` ReaScript so REAPER starts the bridge on launch.
+   `activate_reapy_server` ReaScript as a Custom action. The wrapper also
+   defensively repairs a known reapy bug where `configure_reaper` glues
+   appended `SCR …` entries onto the previous line in `reaper-kb.ini` when
+   that file has no trailing newline.
 
-3. **Start REAPER** — the bridge auto-activates.
+3. **Start REAPER.**
 
-4. Verify from the terminal:
+4. **First-time only — manually run the bridge action.** `configure_reaper`
+   only *registers* the bridge ReaScript; it does not mark it as a startup
+   action. Inside REAPER:
+
+   - Open the **Actions** menu → **Show action list…**
+   - Search `activate_reapy`
+   - Select **Custom: activate_reapy_server.py** (verify the **Path** column
+     points to *this* repo's `.venv` — stale entries from previous reapy
+     installs may also appear) → click **Run**
+   - Right-click → **Run on REAPER startup** to persist across launches.
+     Without this, you'll need to repeat the Run step every time REAPER
+     starts.
+
+5. Verify from the terminal:
 
    ```bash
    .venv/bin/reaper-cli audio get-playback-state
@@ -89,9 +107,25 @@ no need to launch ReaScripts from inside REAPER.
 
    You should see JSON like
    `{"success": true, "playing": false, "paused": false, "recording": false, "raw_flags": 0}`.
-   If you instead get a `"Cannot connect to REAPER"` error, the most common
-   causes are: REAPER wasn't fully quit before step 2, or REAPER wasn't
-   fully relaunched after.
+
+### Troubleshooting
+
+- **`maximum recursion depth exceeded`, or the command hangs** on the first
+  live tool call. REAPER's web interface is up on port 2307 (you can confirm
+  with `lsof -nP -iTCP:2307`) but the bridge ReaScript hasn't been run inside
+  REAPER. Do step 4 above.
+- **`activate_reapy_server.py` doesn't appear in the action list** after
+  setup. The `SCR` line in `reaper-kb.ini` is likely glued onto the previous
+  line (reapy bug — see step 2). Quit REAPER, re-run the setup script (the
+  defensive normalizer will split it), then restart REAPER.
+- **Multiple `Custom: activate_reapy_server.py` entries** appear in the
+  action list. Old reapy installs from prior projects leave their entries
+  behind. Quit REAPER, manually delete the stale `SCR …` lines in
+  `~/Library/Application Support/REAPER/reaper-kb.ini` (keep only the one
+  whose path points at this repo's `.venv`), then restart.
+- **`Cannot connect to REAPER`** (rather than a hang). REAPER isn't running,
+  or its web interface isn't listening — re-check that step 2 finished
+  without errors and that REAPER was actually relaunched after.
 
 The older approach (`reapy.config.enable_dist_api()` from inside REAPER's
 *Actions → Run ReaScript*) still works but is deprecated since reapy 0.8 and
