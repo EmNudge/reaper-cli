@@ -25,6 +25,34 @@ def _get_item(track_index: int, item: int | str):
     return project, track, it
 
 
+def _unwrap_string(result) -> str:
+    """Extract the string out of an RPR tuple return — used for *_GetName /
+    *_GetParamName calls where reapy returns ``(retval, …, name_out, …)``."""
+    if isinstance(result, tuple):
+        names = [s for s in result if isinstance(s, str) and s]
+        return names[-1] if names else ""
+    return str(result)
+
+
+def _resolve_take_fx_param_index(take_id, fx_index: int, param) -> int:
+    """Resolve a take-FX param int OR name to its int index. -1 if unknown."""
+    from reapy import reascript_api as RPR
+
+    if isinstance(param, int):
+        return param
+    try:
+        return int(param)
+    except (TypeError, ValueError):
+        pass
+    n_params = int(RPR.TakeFX_GetNumParams(take_id, fx_index))
+    wanted = str(param).lower()
+    for pi in range(n_params):
+        name = _unwrap_string(RPR.TakeFX_GetParamName(take_id, fx_index, pi, "", 256))
+        if name.lower() == wanted:
+            return pi
+    return -1
+
+
 def _take_info(take, index: int) -> dict:
     info = {
         "index": index,
@@ -229,28 +257,9 @@ def register_tools(mcp):
         try:
             _, _, it = _get_item(track_index, item)
             take = it.takes[take_index]
-            # Resolve param name if necessary by reading param list
-            if isinstance(param, str):
-                try:
-                    param_index = int(param)
-                except ValueError:
-                    n_params = int(RPR.TakeFX_GetNumParams(take.id, fx_index))
-                    wanted = param.lower()
-                    param_index = -1
-                    for pi in range(n_params):
-                        nm = RPR.TakeFX_GetParamName(take.id, fx_index, pi, "", 256)
-                        if isinstance(nm, tuple):
-                            names = [s for s in nm if isinstance(s, str) and s]
-                            n = names[-1] if names else ""
-                        else:
-                            n = str(nm)
-                        if n.lower() == wanted:
-                            param_index = pi
-                            break
-                    if param_index < 0:
-                        return {"success": False, "error": f"Take-FX param not found: {param!r}"}
-            else:
-                param_index = int(param)
+            param_index = _resolve_take_fx_param_index(take.id, int(fx_index), param)
+            if param_index < 0:
+                return {"success": False, "error": f"Take-FX param not found: {param!r}"}
             RPR.TakeFX_SetParamNormalized(take.id, int(fx_index), int(param_index), float(value))
             return {
                 "success": True,
@@ -264,6 +273,121 @@ def register_tools(mcp):
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
+    def get_take_fx_param(
+        track_index: int,
+        item: int | str,
+        take_index: int,
+        fx_index: int,
+        param: int | str,
+    ) -> dict:
+        """Read a normalized parameter (0.0-1.0) on a take-FX plugin.
+
+        ``param`` may be an integer index or a parameter name (case-insensitive).
+        """
+        from reapy import reascript_api as RPR
+
+        try:
+            _, _, it = _get_item(track_index, item)
+            take = it.takes[take_index]
+            param_index = _resolve_take_fx_param_index(take.id, int(fx_index), param)
+            if param_index < 0:
+                return {"success": False, "error": f"Take-FX param not found: {param!r}"}
+            value = float(RPR.TakeFX_GetParamNormalized(take.id, int(fx_index), int(param_index)))
+            return {
+                "success": True,
+                "track_index": track_index,
+                "take_index": int(take_index),
+                "fx_index": int(fx_index),
+                "param_index": int(param_index),
+                "value": value,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def get_take_fx_param_list(
+        track_index: int, item: int | str, take_index: int, fx_index: int
+    ) -> dict:
+        """List every parameter on a take-FX plugin (index, name, normalized value)."""
+        from reapy import reascript_api as RPR
+
+        try:
+            _, _, it = _get_item(track_index, item)
+            take = it.takes[take_index]
+            n_params = int(RPR.TakeFX_GetNumParams(take.id, int(fx_index)))
+            params = []
+            for pi in range(n_params):
+                name = _unwrap_string(RPR.TakeFX_GetParamName(take.id, int(fx_index), pi, "", 256))
+                value = float(RPR.TakeFX_GetParamNormalized(take.id, int(fx_index), pi))
+                params.append({"index": pi, "name": name, "value": value})
+            return {
+                "success": True,
+                "take_index": int(take_index),
+                "fx_index": int(fx_index),
+                "params": params,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def toggle_take_fx(
+        track_index: int,
+        item: int | str,
+        take_index: int,
+        fx_index: int,
+        enabled: bool | None = None,
+    ) -> dict:
+        """Enable / disable / toggle a take-FX plugin. ``enabled=None`` flips state."""
+        from reapy import reascript_api as RPR
+
+        try:
+            _, _, it = _get_item(track_index, item)
+            take = it.takes[take_index]
+            current = bool(RPR.TakeFX_GetEnabled(take.id, int(fx_index)))
+            new_state = (not current) if enabled is None else bool(enabled)
+            RPR.TakeFX_SetEnabled(take.id, int(fx_index), new_state)
+            return {
+                "success": True,
+                "track_index": track_index,
+                "take_index": int(take_index),
+                "fx_index": int(fx_index),
+                "enabled": new_state,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def load_take_fx_preset(
+        track_index: int,
+        item: int | str,
+        take_index: int,
+        fx_index: int,
+        preset_name: str,
+    ) -> dict:
+        """Load a named preset on a take-FX plugin."""
+        from reapy import reascript_api as RPR
+
+        try:
+            _, _, it = _get_item(track_index, item)
+            take = it.takes[take_index]
+            ok = RPR.TakeFX_SetPreset(take.id, int(fx_index), str(preset_name))
+            if not ok:
+                return {
+                    "success": False,
+                    "error": f"Preset not found or could not be loaded: {preset_name!r}",
+                    "fx_index": int(fx_index),
+                }
+            return {
+                "success": True,
+                "track_index": track_index,
+                "take_index": int(take_index),
+                "fx_index": int(fx_index),
+                "preset": preset_name,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
     def remove_take_fx(track_index: int, item: int | str, take_index: int, fx_index: int) -> dict:
         """Remove an FX from a take's FX chain."""
         from reapy import reascript_api as RPR
@@ -272,8 +396,15 @@ def register_tools(mcp):
             _, _, it = _get_item(track_index, item)
             take = it.takes[take_index]
             ok = RPR.TakeFX_Delete(take.id, int(fx_index))
+            if not ok:
+                return {
+                    "success": False,
+                    "error": f"TakeFX_Delete returned False (fx_index={fx_index} out of range?)",
+                    "track_index": track_index,
+                    "take_index": int(take_index),
+                }
             return {
-                "success": bool(ok),
+                "success": True,
                 "track_index": track_index,
                 "take_index": int(take_index),
                 "removed_fx_index": int(fx_index),

@@ -146,6 +146,39 @@ def test_parses_clap_entry(tmp_path):
     assert clap[0]["manufacturer"] == "Vendor"
 
 
+def test_clap_falls_back_to_path_when_name_lacks_separator(tmp_path):
+    """The display name has no ' - ' or ': ' separator, so we walk the path —
+    and must skip the leading '/' segment instead of returning it as the
+    manufacturer."""
+    finder = _make_finder(
+        tmp_path,
+        {
+            "reaper-clapplugins64.ini": (
+                '"SnazzySynth"=/Library/Audio/Plug-Ins/CLAP/Surge/SnazzySynth.clap\n'
+            ),
+        },
+    )
+    clap = [p for p in finder.find_installed_plugins() if p["plugin_type"] == "CLAP"]
+    # Path walk should pick up "Surge" (the vendor sub-dir under CLAP/), not
+    # "/", "Library", "Audio", "Plug-Ins", or "CLAP".
+    assert clap[0]["manufacturer"] == "Surge"
+
+
+def test_vst_display_with_multiple_parens_uses_last_group(tmp_path):
+    """Names like ``Soothe2 (FF Pro) (oeksound)`` need to bind the manufacturer
+    to the *last* parenthesized group — splitting on the first '(' would give
+    the wrong answer."""
+    finder = _make_finder(
+        tmp_path,
+        {
+            "reaper-vstplugins64.ini": ("soothe2.dll=AAA,1,Soothe2 (FF Pro) (oeksound)\n"),
+        },
+    )
+    plugins = finder.find_installed_plugins()
+    assert plugins[0]["name"] == "Soothe2 (FF Pro)"
+    assert plugins[0]["manufacturer"] == "oeksound"
+
+
 # ---------- search / filter ----------
 
 

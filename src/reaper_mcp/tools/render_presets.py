@@ -23,11 +23,12 @@ logger = logging.getLogger("reaper_mcp.tools.render_presets")
 
 # Each key listed with the value type REAPER's API expects. Numeric keys go
 # through GetSetProjectInfo; string keys through GetSetProjectInfo_String.
+# RENDER_FORMAT and RENDER_FORMAT2 are opaque FOURCC-prefixed binary blobs —
+# string-only, NOT numeric — so a preset round-trip on them captures the
+# format the user configured in REAPER's GUI verbatim.
 _NUMERIC_KEYS = (
     "RENDER_SRATE",
     "RENDER_CHANNELS",
-    "RENDER_FORMAT",
-    "RENDER_FORMAT2",
     "RENDER_BOUNDSFLAG",
     "RENDER_DITHER",
     "RENDER_TAILMS",
@@ -39,6 +40,8 @@ _NUMERIC_KEYS = (
 _STRING_KEYS = (
     "RENDER_FILE",
     "RENDER_PATTERN",
+    "RENDER_FORMAT",
+    "RENDER_FORMAT2",
     "RENDER_FORMAT_CUSTOM",
 )
 
@@ -84,7 +87,7 @@ def register_tools(mcp):
                     "name": name,
                     "keys_stored": len(data),
                     "sample_rate": data.get("RENDER_SRATE"),
-                    "format_code": data.get("RENDER_FORMAT"),
+                    "format_fourcc": (data.get("RENDER_FORMAT") or "")[:4],
                     "output_path": data.get("RENDER_FILE"),
                 }
                 for name, data in sorted(presets.items())

@@ -1,8 +1,9 @@
 """Envelope tools — FX parameter automation, named envelopes, point reading/writing.
 
-The existing ``mixing.py`` adds points to ``Volume`` and ``Pan`` envelopes only.
-This module exposes every envelope on a track (including arbitrary FX-param
-envelopes) for both reading and writing.
+Exposes every envelope on a track (track volume/pan, send envelopes, and
+arbitrary FX-parameter envelopes) for both reading and writing. Each tool
+accepts a ``track_index`` plus an ``envelope_name`` resolved via reapy's name
+lookup; see ``list_envelopes`` for the names exposed by a given track.
 """
 
 import logging
@@ -226,8 +227,15 @@ def register_tools(mcp):
                     "error": f"Envelope not found: {envelope_name!r}",
                 }
             ok = RPR.DeleteEnvelopePointEx(env, -1, int(point_index))
+            if not ok:
+                return {
+                    "success": False,
+                    "error": f"DeleteEnvelopePointEx returned False (point_index={point_index} likely out of range)",
+                    "track_index": track_index,
+                    "envelope_name": envelope_name,
+                }
             return {
-                "success": bool(ok),
+                "success": True,
                 "track_index": track_index,
                 "envelope_name": envelope_name,
                 "deleted_index": int(point_index),

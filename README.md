@@ -2,7 +2,7 @@
 
 A single REAPER Model Context Protocol (MCP) server built by **tight-merging**
 three independent upstream projects into one Python package, plus a sibling
-CLI on the same code. 177 tools spanning offline `.RPP` analysis, live
+CLI on the same code. 201 tools spanning offline `.RPP` analysis, live
 `python-reapy` DAW control, full MIDI event editing, multi-take + take FX,
 parameter automation, project snapshots + bulk mutations, track templates,
 send routing, mastering, audio analysis, transport state, REAPER preferences,
@@ -38,12 +38,12 @@ reaper-mcp                            # stdio transport — wire into Claude Des
 python -m reaper_mcp
 ```
 
-The server is named `reaper-mcp-unified` and registers 177 tools on a single
+The server is named `reaper-mcp-unified` and registers 201 tools on a single
 `FastMCP` instance.
 
 ### `reaper-cli` — direct command-line access (no LLM required)
 
-The same 177 tools are exposed as Typer commands grouped by module. Explore
+The same 201 tools are exposed as Typer commands grouped by module. Explore
 with `reaper-cli --help` and `reaper-cli <group> --help`.
 
 ```bash
@@ -57,7 +57,7 @@ Every command returns the tool's result as JSON on stdout.
 A few CLI conversion notes:
 
 - `Union[int, str]` params (like item identifiers) are accepted as text; the underlying function does the right thing.
-- `list[dict]` params (e.g. `add-midi-notes`) take a JSON string: `reaper-cli midi add-midi-notes 0 0 '[{"pitch":60,"start_measure":"1:1,000","length_measure":"0:1,0"}]'`.
+- `list[dict]` params (e.g. `add-midi-notes`) take a JSON string: `reaper-cli midi-notes add-midi-notes 0 0 '[{"pitch":60,"start_measure":"1:1,000","length_measure":"0:1,0"}]'`.
 - `list[int]` params (e.g. `render-stems --track-indices`) use repeated `--flag` syntax.
 
 ## Enable REAPER's distant API
@@ -144,7 +144,7 @@ structural smoke. Runs in <1 second; no REAPER required. See
 
 ## Status
 
-Smoke-tested: imports cleanly under Python 3.12, all 177 tools register
+Smoke-tested: imports cleanly under Python 3.12, all 201 tools register
 without name collisions. The merged code calls `python-reapy` and the offline
 analysis modules using the same patterns as the upstreams — it should be
 functionally compatible with each upstream's expected behavior. Live tools

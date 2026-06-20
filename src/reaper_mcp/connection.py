@@ -24,9 +24,11 @@ def ensure_connected() -> None:
     except Exception as e:
         raise RuntimeError(
             f"Cannot connect to REAPER: {e}. "
-            "Make sure REAPER is running and the distant API is enabled. "
-            "To enable it: in REAPER go to Actions > Run ReaScript, then run: "
-            "import reapy; reapy.config.enable_dist_api()"
+            "Make sure REAPER is running and the distant API is enabled — "
+            "from the terminal (with REAPER quit): "
+            ".venv/bin/python scripts/setup_reaper_connection.py "
+            "then start REAPER and run the activate_reapy_server action once. "
+            "See README.md → 'Enable REAPER's distant API' for details."
         ) from e
 
 

@@ -60,7 +60,7 @@ def _short_help(doc: str | None) -> str | None:
 app = typer.Typer(
     name="reaper-cli",
     help=(
-        "REAPER MCP — command-line access to 150+ unified tools (no LLM client required).\n\n"
+        "REAPER MCP — command-line access to 200+ unified tools (no LLM client required).\n\n"
         "Commands are grouped by module. Live tools need REAPER running with the "
         "python-reapy distant API enabled; offline tools (under 'offline') do not."
     ),

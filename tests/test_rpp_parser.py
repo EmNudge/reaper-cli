@@ -95,6 +95,83 @@ def test_track_without_items_has_empty_list(parsed):
     assert parsed.tracks[1].items == []
 
 
+def _parse_rpp_text(tmp_path, text: str):
+    p = tmp_path / "test.RPP"
+    p.write_text(text)
+    return RPPParser(str(p)).project
+
+
+def test_parses_single_quoted_value(tmp_path):
+    """REAPER uses ' when the value contains a literal "."""
+    text = "TEMPO 120 4 4\n<TRACK\n  NAME 'has \"a\" double quote'\n>\n"
+    project = _parse_rpp_text(tmp_path, text)
+    assert project.tracks[0].name == 'has "a" double quote'
+
+
+def test_parses_backtick_quoted_value(tmp_path):
+    """Backticks are used when the value contains both " and '."""
+    text = "TEMPO 120 4 4\n<TRACK\n  NAME `has \"both\" 'quote' kinds`\n>\n"
+    project = _parse_rpp_text(tmp_path, text)
+    assert project.tracks[0].name == "has \"both\" 'quote' kinds"
+
+
+def test_recovers_unclosed_track_block(tmp_path):
+    """A truncated RPP shouldn't silently drop the track that was being read."""
+    text = (
+        "TEMPO 120 4 4\n"
+        "<TRACK\n"
+        '  NAME "Complete"\n'
+        ">\n"
+        "<TRACK\n"
+        '  NAME "Unfinished"\n'  # no closing > before EOF
+    )
+    project = _parse_rpp_text(tmp_path, text)
+    assert len(project.tracks) == 2
+    assert {t.name for t in project.tracks} == {"Complete", "Unfinished"}
+
+
+def test_parses_non_wav_source_file(tmp_path):
+    """Items with <SOURCE MP3> / FLAC / etc. should still surface their path."""
+    text = (
+        "TEMPO 120 4 4\n"
+        "<TRACK\n"
+        '  NAME "Drums"\n'
+        "  <ITEM\n"
+        "    POSITION 0\n"
+        "    LENGTH 4\n"
+        "    <SOURCE MP3\n"
+        '      FILE "kick.mp3"\n'
+        "    >\n"
+        "  >\n"
+        ">\n"
+    )
+    project = _parse_rpp_text(tmp_path, text)
+    items = project.tracks[0].items
+    assert len(items) == 1
+    assert items[0].audio_filepath.endswith("kick.mp3")
+
+
+def test_base64_data_with_real_charset_is_captured(tmp_path):
+    """The previous str.isalnum() filter dropped lines containing +, /, or =
+    — i.e. essentially every real base64 line."""
+    real_b64 = "ABcd+/XYZ=="  # contains all three previously-rejected chars
+    text = (
+        "TEMPO 120 4 4\n"
+        "<TRACK\n"
+        '  NAME "T"\n'
+        "  <FXCHAIN\n"
+        '    <VST "VST: X" x.vst3 0 "" 1\n'
+        f"      {real_b64}\n"
+        "    >\n"
+        "  >\n"
+        ">\n"
+    )
+    project = _parse_rpp_text(tmp_path, text)
+    fx = project.tracks[0].fx_chain[0]
+    # Should appear verbatim (it's well under the truncation threshold).
+    assert real_b64 in fx.encoded_param
+
+
 def test_encoded_param_truncation():
     """Very long encoded VST data should be truncated to keep the parsed
     structure compact, not silently dropped."""

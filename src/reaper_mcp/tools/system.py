@@ -15,6 +15,60 @@ logger = logging.getLogger("reaper_mcp.tools.system")
 
 def register_tools(mcp):
     @mcp.tool()
+    def about_system() -> dict:
+        """Orientation primer for the system tool group — call before first use.
+
+        Covers: the run_reaper_action escape hatch (the most powerful tool in
+        the whole package), preference vs project-setting differences,
+        keymap/toolbar tools that require REAPER closed, and the undo-block
+        pattern for grouping multiple mutations under a single Ctrl+Z.
+        """
+        return {
+            "success": True,
+            "universal_escape_hatch": (
+                "run_reaper_action drives any menu item by its action ID — "
+                "integer (1007=Play, 40012=Split items, …) or named "
+                "(_SWS_*, custom IDs). Discover IDs via REAPER → "
+                "Actions → Show action list, or call search_actions to query "
+                "from MCP. Combined with get_action_name for reverse lookup, "
+                "this covers ~every operation REAPER exposes through the UI."
+            ),
+            "preferences_vs_project_settings": {
+                "preferences": (
+                    "Global REAPER settings (audio device, plugin paths, "
+                    "appearance). Read/write via get_reaper_pref / "
+                    "set_reaper_pref. Most apply immediately; audio-device and "
+                    "plugin-scan settings only after restart."
+                ),
+                "project_settings": (
+                    "Per-project keys like RENDER_*, MASTER_VOL, MASTER_PAN. "
+                    "Read/write via get_project_setting / set_project_setting. "
+                    "These are saved with the .RPP."
+                ),
+                "actions": (
+                    "Triggers (commands). Read names via get_action_name, "
+                    "search by string via search_actions, run via "
+                    "run_reaper_action."
+                ),
+            },
+            "gui_only_fallbacks": [
+                "import_keymap: requires REAPER closed (edits reaper-kb.ini directly).",
+                "add_toolbar_item: edits reaper-menu.ini; some changes need a restart.",
+                "Both tools log what they changed so callers can verify after restart.",
+            ],
+            "undo_block_pattern": (
+                "Wrap multiple mutating tool calls with begin_undo_block + "
+                "end_undo_block to group them under one Ctrl+Z entry. Useful "
+                "for any logical 'one operation' that requires several API "
+                "calls (e.g. setting up a routing chain)."
+            ),
+            "related_groups": {
+                "snapshot": "For bulk read+write, prefer get_project_snapshot + set_*_bulk over set_reaper_pref loops.",
+                "reapack": "ReaPack control via _REAPACK_* named commands in run_reaper_action.",
+            },
+        }
+
+    @mcp.tool()
     def run_reaper_action(action_id: int | str) -> dict:
         """Run any REAPER Main-section action by ID. Universal escape hatch.
 
@@ -212,7 +266,14 @@ def register_tools(mcp):
 
         try:
             ok = RPR.set_config_var_string(name, str(value))
-            return {"success": bool(ok), "name": name, "value": value}
+            if not ok:
+                return {
+                    "success": False,
+                    "error": f"REAPER's set_config_var_string rejected the value for {name!r}",
+                    "name": name,
+                    "value": value,
+                }
+            return {"success": True, "name": name, "value": value}
         except Exception as e:
             return {"success": False, "error": str(e)}
 

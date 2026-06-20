@@ -18,6 +18,57 @@ logger = logging.getLogger("reaper_mcp.tools.render")
 
 def register_tools(mcp):
     @mcp.tool()
+    def about_render() -> dict:
+        """Orientation primer for the render tool group — call before first use.
+
+        Covers: REAPER's render settings model (config blobs vs numeric keys),
+        the format-blob FOURCC requirement, the relationship between this
+        group and ``render_presets``, and the always-fixed mechanism that
+        actually triggers a render (action 41824).
+        """
+        return {
+            "success": True,
+            "how_render_runs": (
+                "Every render in this group works by (1) writing settings into "
+                "REAPER's project info keys, then (2) firing action 41824 "
+                "(File: Render project, using most recent settings). REAPER "
+                "renders synchronously to the path in RENDER_FILE."
+            ),
+            "format_blob_warning": (
+                "RENDER_FORMAT and RENDER_FORMAT2 are NOT numeric — they are "
+                "opaque FOURCC-prefixed blobs set via GetSetProjectInfo_String. "
+                "We construct a valid WAV blob in-process; for MP3/OGG/FLAC, "
+                "callers must first configure the format in REAPER's GUI, "
+                "save_render_preset, then apply_render_preset before rendering. "
+                "Format/bit-depth args on render_project for non-WAV formats "
+                "will raise rather than silently rendering as the GUI's last "
+                "format."
+            ),
+            "bounds_flag": {
+                "0": "render entire project",
+                "1": "render time selection",
+                "note": "render_project uses 0; render_time_selection sets time-selection then uses 1.",
+            },
+            "presets_workflow": [
+                "1. Configure desired settings in REAPER's GUI (Render dialog).",
+                "2. Call save_render_preset(name) to snapshot all RENDER_* keys.",
+                "3. Later: apply_render_preset(name) → render_project / render_time_selection.",
+                "Presets live in our config dir (not REAPER's), JSON-backed, version-safe.",
+            ],
+            "stems": (
+                "render_stems solos each requested track in turn and renders "
+                "individually. It restores solo state in a finally block. Stem "
+                "files are named after the track name (sanitised) under "
+                "output_directory."
+            ),
+            "related_groups": {
+                "render_presets": "Save/apply/list/delete named render configurations.",
+                "analysis": "Live spectrum/dynamics analysis — also uses temp renders internally.",
+                "master": "analyze_loudness / normalize_project — render once, measure LUFS.",
+            },
+        }
+
+    @mcp.tool()
     def render_project(
         output_path: str,
         format: str = "wav",
