@@ -13,6 +13,27 @@ import types
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def _restore_reapy_modules():
+    """Undo the ``sys.modules`` clobbering ``_install_stubs`` does.
+
+    These tests replace the real ``reapy`` package with a fake module to model a
+    fixed-tempo project. Without restoring afterward the fake leaks into every
+    later test in the session (it is not a real package, so anything importing
+    ``reapy.tools`` / ``reapy.is_inside_reaper`` then breaks).
+    """
+    keys = ("reapy", "reapy.reascript_api", "reaper_mcp.utils.positions")
+    saved = {k: sys.modules.get(k) for k in keys}
+    try:
+        yield
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+
 # ---------- RPR / reapy stubs (installed before importing positions) ----------
 
 

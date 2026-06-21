@@ -18,12 +18,11 @@ must be running and the **distant python-reapy API** must be enabled for any
 live tool to work — see "Enable REAPER's distant API" below.
 
 ```bash
-# create a venv with Python 3.10+
-uv venv --python 3.12 .venv          # or python3.12 -m venv .venv
-source .venv/bin/activate
+# create the venv and install the unified package (+ dev tools) in one step
+uv sync --python 3.12
 
-# install the unified package
-pip install -e .
+# or, if you manage the venv yourself:
+uv venv --python 3.12 .venv && source .venv/bin/activate && uv pip install -e .
 ```
 
 ## Run
@@ -134,8 +133,8 @@ will be removed in 1.0. Use `configure_reaper` instead.
 ## Tests
 
 ```bash
-pip install -e ".[dev]"
-pytest
+uv sync          # installs the dev dependency group
+uv run pytest
 ```
 
 96 tests covering offline modules, CLI helpers, pure utilities, and

@@ -62,7 +62,7 @@ def main() -> int:
     except ImportError:
         print(
             "python-reapy is not installed. Install the unified package with "
-            "its deps first:\n  pip install -e .",
+            "its deps first:\n  uv sync",
             file=sys.stderr,
         )
         return 2
