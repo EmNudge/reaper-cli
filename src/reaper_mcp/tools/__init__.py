@@ -37,6 +37,14 @@ TOOL_MODULES: list[tuple[str, str]] = [
     ("render", "Render tools — full project, time selection, stems"),
     ("analysis", "Live analysis — spectrum, dynamics, stereo, clipping, transients"),
     ("system", "System — actions, preferences, project settings, undo blocks"),
+    (
+        "scripting",
+        "Scripting — run arbitrary Python inside live REAPER, live config vars (no restart)",
+    ),
+    (
+        "restart",
+        "Restart orchestration — apply restart-only config edits without losing work",
+    ),
     ("takes", "Take ops — multi-take items, take FX"),
     ("snapshot", "Project snapshot + bulk setters"),
     ("templates", "Track templates — save / apply / list .RTrackTemplate"),
