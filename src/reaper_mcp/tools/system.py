@@ -13,6 +13,27 @@ from reaper_mcp.connection import get_project
 logger = logging.getLogger("reaper_mcp.tools.system")
 
 
+def _coerce_int(val: str | None) -> int | str | None:
+    """Best-effort int conversion for raw INI values; pass through on failure."""
+    if val is None:
+        return None
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return val
+
+
+# The low 2 bits of a `dockermodeN` value encode which edge of the main window
+# the docker is attached to. Verified empirically by driving the "Docker: Show
+# in {bottom,left,top,right}" actions (41598/41599/41600/41601) and reading
+# back reaper.ini: bottom→0, left→1, top→2, right→3.
+_DOCKER_EDGE = {0: "bottom", 1: "left", 2: "top", 3: "right"}
+
+
+def _docker_edge(mode: int | str | None) -> str | None:
+    return _DOCKER_EDGE.get(mode & 0b11) if isinstance(mode, int) else None
+
+
 def register_tools(mcp):
     @mcp.tool()
     def about_system() -> dict:
@@ -56,6 +77,20 @@ def register_tools(mcp):
                 "add_toolbar_item: edits reaper-menu.ini; some changes need a restart.",
                 "Both tools log what they changed so callers can verify after restart.",
             ],
+            "dock_layout": (
+                "get_dock_layout reads the current docker arrangement from "
+                "reaper.ini (no reapy function exists for it). It reflects the "
+                "last save/exit flush, not unsaved live changes. Changing the "
+                "layout live is done via run_reaper_action — whole-layout via "
+                "window screensets (Save 40474-40483 / Load 40454-40463), or "
+                "discrete docker actions; get_dock_layout returns the IDs. "
+                "KNOWN LIMITATION: there is no API to move a SPECIFIC docked "
+                "window to a chosen edge — the docker_edge actions only move "
+                "docker 0 (the active docker), and no 'focus this docker' "
+                "command exists. To place an arbitrary window (e.g. the video "
+                "window) you must arrange it once in the GUI, then capture it "
+                "with a window screenset and Load it back programmatically."
+            ),
             "undo_block_pattern": (
                 "Wrap multiple mutating tool calls with begin_undo_block + "
                 "end_undo_block to group them under one Ctrl+Z entry. Useful "
@@ -639,6 +674,160 @@ def register_tools(mcp):
                 "line": new_line,
                 "section_created": not section_exists,
                 "note": "Restart REAPER for the toolbar change to take effect.",
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool()
+    def get_dock_layout(reaper_ini_path: str | None = None) -> dict:
+        """Report REAPER's current docked-window layout from ``reaper.ini``.
+
+        REAPER exposes no ReaScript/reapy function to read the docker layout, so
+        this parses ``reaper.ini`` directly (section-aware). The state reflects
+        the **last time REAPER flushed the file** — REAPER only rewrites
+        ``reaper.ini`` on project save / app exit, so live re-docking done since
+        launch may not appear yet. Save the project (or quit) to force a flush.
+
+        ``reaper_ini_path`` defaults to the standard per-OS location via
+        platformdirs (``~/Library/Application Support/REAPER/reaper.ini`` on
+        macOS, ``~/.config/REAPER/reaper.ini`` on Linux,
+        ``%APPDATA%\\REAPER\\reaper.ini`` on Windows).
+
+        Returns:
+        - ``dockers``: per-docker config from ``[reaper]`` — ``mode`` (raw
+          ``dockermodeN`` value), ``edge`` (decoded attach edge: the low 2 bits
+          give bottom/left/top/right), and ``selected_tab`` (``dockerselN``)
+          where known.
+        - ``mixer``: docked flag + visibility + geometry (``mixwnd_*``).
+        - ``dock_heights``: main (``dockheight``) and toolbar (``dockheight_t``).
+        - ``docked_windows``: every section carrying a ``docked=`` flag (e.g.
+          ``[reaper_video]``), with its boolean value.
+        - ``saved_dock_prefs``: ``[REAPERdockpref]`` — REAPER's remembered
+          "this window prefers docker N at fraction F" map.
+        - ``reaimgui_docking``: the ReaImGui *extension's* own ImGui-docking
+          flags from ``[reaimgui]`` — surfaced separately because they share the
+          ``docking*`` prefix but are NOT REAPER's main docker.
+        - ``setting_dock_layout``: how to CHANGE the layout (see note below).
+
+        Setting the layout: editing ``reaper.ini`` while REAPER is running is
+        futile (overwritten on exit). The live path is REAPER actions, driven
+        via ``run_reaper_action``. Whole-layout capture/restore uses **window
+        screensets**: ``Save window set #01-10`` = action IDs 40474-40483,
+        ``Load window set #01-10`` = 40454-40463. Finer control: docker edge
+        41598/41599/41600/41601 (bottom/left/top/right), ``Mixer: Toggle
+        docking`` 40083, ``Dock/undock focused window`` 41172, ``View: Show
+        docker`` 40279. The ``setting_dock_layout`` field in the result repeats
+        these IDs for convenience.
+
+        Known limitation (verified empirically): REAPER exposes no action or
+        ReaScript call to move a *specific* docked window to a chosen edge. The
+        docker-edge actions only reposition docker 0 (the active docker), and
+        there is no "focus this docker" command, so a non-active docker (e.g.
+        the one holding the video window) cannot be retargeted from the API —
+        it needs a GUI click/drag. The only reliable programmatic placement of
+        an arbitrary window is the screenset round-trip: arrange once in the
+        GUI, ``Save window set #NN``, then ``Load window set #NN`` to restore.
+        """
+        import configparser
+        from pathlib import Path
+
+        from platformdirs import user_config_dir
+
+        try:
+            if reaper_ini_path is None:
+                ini_path = Path(user_config_dir("REAPER")) / "reaper.ini"
+            else:
+                ini_path = Path(reaper_ini_path).expanduser()
+            if not ini_path.is_file():
+                return {"success": False, "error": f"reaper.ini not found: {ini_path}"}
+
+            cp = configparser.ConfigParser(interpolation=None, strict=False)
+            cp.optionxform = str  # ty: ignore[invalid-assignment]  # preserve key case
+            cp.read(ini_path, encoding="utf-8")
+
+            def _section(name: str) -> dict:
+                return dict(cp.items(name)) if cp.has_section(name) else {}
+
+            reaper = _section("reaper")
+
+            # Dockers: dockermodeN (edge/attach) + dockerselN (selected tab).
+            dockers: dict[str, dict] = {}
+            for key, val in reaper.items():
+                if key.startswith("dockermode"):
+                    idx = key[len("dockermode") :]
+                    mode = _coerce_int(val)
+                    dockers.setdefault(idx, {})["mode"] = mode
+                    dockers[idx]["edge"] = _docker_edge(mode)
+                elif key.startswith("dockersel"):
+                    idx = key[len("dockersel") :]
+                    dockers.setdefault(idx, {})["selected_tab"] = val
+            dockers = {k: dockers[k] for k in sorted(dockers, key=lambda s: (len(s), s))}
+
+            mixer = {
+                "docked": reaper.get("mixwnd_dock") == "1",
+                "visible": reaper.get("mixwnd_vis") == "1",
+                "maximized": reaper.get("mixwnd_max") == "1",
+                "raw": {k: v for k, v in reaper.items() if k.startswith("mixwnd_")},
+            }
+
+            # Any section with a docked= flag (e.g. [reaper_video]).
+            docked_windows: dict[str, bool] = {}
+            for sect in cp.sections():
+                if cp.has_option(sect, "docked"):
+                    docked_windows[sect] = cp.get(sect, "docked") == "1"
+
+            reaimgui = _section("reaimgui")
+            reaimgui_docking = {
+                k: v for k, v in reaimgui.items() if k.startswith("docking")
+            }
+
+            return {
+                "success": True,
+                "reaper_ini": str(ini_path),
+                "stale_warning": (
+                    "Reflects REAPER's last flush of reaper.ini (on save/exit). "
+                    "Re-docking since launch may not appear until you save or quit."
+                ),
+                "dockers": dockers,
+                "mixer": mixer,
+                "dock_heights": {
+                    "main": _coerce_int(reaper.get("dockheight")),
+                    "toolbar": _coerce_int(reaper.get("dockheight_t")),
+                },
+                "docked_windows": docked_windows,
+                "saved_dock_prefs": _section("REAPERdockpref"),
+                "reaimgui_docking": reaimgui_docking or None,
+                "setting_dock_layout": {
+                    "note": (
+                        "reaper.ini is overwritten on exit — editing it while "
+                        "REAPER runs has no effect. Change the layout live via "
+                        "run_reaper_action with these IDs:"
+                    ),
+                    "limitation": (
+                        "REAPER exposes NO action/ReaScript call to move a "
+                        "specific docked window to a chosen edge. The docker_edge "
+                        "actions below only reposition docker 0 (the active "
+                        "docker); a non-active docker (e.g. one holding the video "
+                        "window) cannot be retargeted from the API because there "
+                        "is no 'focus this docker' command — it needs a real GUI "
+                        "click or drag. Verified empirically: show/hide and "
+                        "undock-focused (41172) do not transfer active-docker "
+                        "status. The ONLY reliable programmatic way to set an "
+                        "arbitrary window's dock position is to arrange it once in "
+                        "the GUI, Save window set #NN, then Load window set #NN."
+                    ),
+                    "save_window_set_01_to_10": list(range(40474, 40484)),
+                    "load_window_set_01_to_10": list(range(40454, 40464)),
+                    "docker_edge_active_docker_only": {
+                        "bottom": 41598,
+                        "left": 41599,
+                        "top": 41600,
+                        "right": 41601,
+                    },
+                    "toggle_mixer_docking": 40083,
+                    "dock_undock_focused_window": 41172,
+                    "show_docker": 40279,
+                },
             }
         except Exception as e:
             return {"success": False, "error": str(e)}

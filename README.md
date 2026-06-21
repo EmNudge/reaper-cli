@@ -2,7 +2,7 @@
 
 A single REAPER Model Context Protocol (MCP) server built by **tight-merging**
 three independent upstream projects into one Python package, plus a sibling
-CLI on the same code. 298 tools spanning offline `.RPP` analysis, live
+CLI on the same code. 299 tools spanning offline `.RPP` analysis, live
 `python-reapy` DAW control, full MIDI event editing, multi-take + take FX,
 parameter automation, project snapshots + bulk mutations, track templates,
 send routing, mastering, audio analysis, transport state, REAPER preferences,
@@ -38,12 +38,12 @@ reaper-mcp                            # stdio transport — wire into Claude Des
 python -m reaper_mcp
 ```
 
-The server is named `reaper-mcp-unified` and registers 298 tools on a single
+The server is named `reaper-mcp-unified` and registers 299 tools on a single
 `FastMCP` instance.
 
 ### `reaper-cli` — direct command-line access (no LLM required)
 
-The same 298 tools are exposed as Typer commands grouped by module. Explore
+The same 299 tools are exposed as Typer commands grouped by module. Explore
 with `reaper-cli --help` and `reaper-cli <group> --help`.
 
 ```bash
@@ -144,7 +144,7 @@ structural smoke. Runs in <1 second; no REAPER required. See
 
 ## Status
 
-Smoke-tested: imports cleanly under Python 3.12, all 298 tools register
+Smoke-tested: imports cleanly under Python 3.12, all 299 tools register
 without name collisions. The merged code calls `python-reapy` and the offline
 analysis modules using the same patterns as the upstreams — it should be
 functionally compatible with each upstream's expected behavior. Live tools
