@@ -54,9 +54,7 @@ def _is_macos() -> bool:
 
 
 def _reaper_running() -> bool:
-    proc = subprocess.run(
-        ["pgrep", "-x", "REAPER"], capture_output=True, text=True, check=False
-    )
+    proc = subprocess.run(["pgrep", "-x", "REAPER"], capture_output=True, text=True, check=False)
     return proc.returncode == 0 and bool(proc.stdout.strip())
 
 
@@ -325,9 +323,7 @@ def register_tools(mcp):
         ``dry_run=True`` to preview without restarting. Single-tab, macOS-only v1.
         """
         try:
-            return _run_restart(
-                protect_config, reconnect_timeout, dry_run, keep_backups
-            )
+            return _run_restart(protect_config, reconnect_timeout, dry_run, keep_backups)
         except Exception as e:  # noqa: BLE001
             return {
                 "success": False,

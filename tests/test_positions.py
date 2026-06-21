@@ -34,6 +34,7 @@ def _restore_reapy_modules():
             else:
                 sys.modules[k] = v
 
+
 # ---------- RPR / reapy stubs (installed before importing positions) ----------
 
 

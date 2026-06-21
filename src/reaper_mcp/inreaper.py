@@ -39,9 +39,7 @@ def _jsonable(value, _depth: int = 0):
     if _depth >= MAX_JSON_DEPTH:
         return repr(value)
     if isinstance(value, dict):
-        return {
-            str(k): _jsonable(v, _depth + 1) for k, v in list(value.items())[:200]
-        }
+        return {str(k): _jsonable(v, _depth + 1) for k, v in list(value.items())[:200]}
     if isinstance(value, (list, tuple, set, frozenset)):
         return [_jsonable(v, _depth + 1) for v in list(value)[:500]]
     return repr(value)
@@ -81,9 +79,7 @@ def run_code(code: str, mode: str = "exec", return_var: str = "result") -> dict:
     namespace = _build_namespace()
     captured = io.StringIO()
     try:
-        with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(
-            captured
-        ):
+        with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
             if mode == "eval":
                 value = eval(compile(code, "<reaper-cli>", "eval"), namespace)
             else:
@@ -195,12 +191,8 @@ def _config_var_api():
     return {
         "get_int": bind_api("SNM_GetIntConfigVar", ctypes.c_int, cstr, ctypes.c_int),
         "set_int": bind_api("SNM_SetIntConfigVar", ctypes.c_byte, cstr, ctypes.c_int),
-        "get_dbl": bind_api(
-            "SNM_GetDoubleConfigVar", ctypes.c_double, cstr, ctypes.c_double
-        ),
-        "set_dbl": bind_api(
-            "SNM_SetDoubleConfigVar", ctypes.c_byte, cstr, ctypes.c_double
-        ),
+        "get_dbl": bind_api("SNM_GetDoubleConfigVar", ctypes.c_double, cstr, ctypes.c_double),
+        "set_dbl": bind_api("SNM_SetDoubleConfigVar", ctypes.c_byte, cstr, ctypes.c_double),
     }
 
 

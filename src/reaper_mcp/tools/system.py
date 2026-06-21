@@ -777,9 +777,7 @@ def register_tools(mcp):
                     docked_windows[sect] = cp.get(sect, "docked") == "1"
 
             reaimgui = _section("reaimgui")
-            reaimgui_docking = {
-                k: v for k, v in reaimgui.items() if k.startswith("docking")
-            }
+            reaimgui_docking = {k: v for k, v in reaimgui.items() if k.startswith("docking")}
 
             return {
                 "success": True,

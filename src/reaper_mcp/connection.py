@@ -69,9 +69,7 @@ def reconnect(timeout: float = 60.0, interval: float = 1.5) -> bool:
         except Exception as e:  # noqa: BLE001 - REAPER not up yet; keep polling
             last_error = e
             time.sleep(interval)
-    raise RuntimeError(
-        f"Could not reconnect to REAPER within {timeout:.0f}s: {last_error}"
-    )
+    raise RuntimeError(f"Could not reconnect to REAPER within {timeout:.0f}s: {last_error}")
 
 
 def get_project():
@@ -104,9 +102,7 @@ def call_in_reaper(func, *args, **kwargs):
     # dynamic stub) rather than importing the private submodule directly.
     client = reapy.tools.network.machines.get_selected_client()
     if client is None:
-        raise RuntimeError(
-            "reapy client unavailable even though connection reported success."
-        )
+        raise RuntimeError("reapy client unavailable even though connection reported success.")
     _ensure_remote_importable(client)
     return client.request(func, {"args": list(args), "kwargs": dict(kwargs)})
 
