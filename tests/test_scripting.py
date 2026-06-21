@@ -142,11 +142,7 @@ def test_inreaper_top_level_imports_are_stdlib_only():
 
     src = Path(inreaper.__file__).read_text()
     tree = ast.parse(src)
-    module_level = [
-        n
-        for n in tree.body
-        if isinstance(n, (ast.Import, ast.ImportFrom))
-    ]
+    module_level = [n for n in tree.body if isinstance(n, (ast.Import, ast.ImportFrom))]
     names: list[str] = []
     for node in module_level:
         if isinstance(node, ast.ImportFrom):
@@ -183,9 +179,7 @@ def test_call_in_reaper_outside_dispatches_to_client(monkeypatch):
             captured["payload"] = payload
             return {"success": True, "result": "ok"}
 
-    monkeypatch.setattr(
-        reapy.tools.network.machines, "get_selected_client", lambda: FakeClient()
-    )
+    monkeypatch.setattr(reapy.tools.network.machines, "get_selected_client", lambda: FakeClient())
 
     def some_helper(a, b=0):  # pragma: no cover - never actually invoked here
         return a + b
@@ -203,8 +197,6 @@ def test_call_in_reaper_raises_when_no_client(monkeypatch):
 
     monkeypatch.setattr(connection, "ensure_connected", lambda: None)
     monkeypatch.setattr(reapy, "is_inside_reaper", lambda: False)
-    monkeypatch.setattr(
-        reapy.tools.network.machines, "get_selected_client", lambda: None
-    )
+    monkeypatch.setattr(reapy.tools.network.machines, "get_selected_client", lambda: None)
     with pytest.raises(RuntimeError):
         connection.call_in_reaper(lambda: None)
